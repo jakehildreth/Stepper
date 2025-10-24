@@ -7,9 +7,9 @@
     Copyright            = '(c) 2025 - 2025. All rights reserved.'
     Description          = 'A module to help create step-by-step modules that guide users through complex tasks.'
     FileList             = @('Stepper.psm1', 'Stepper.psd1')
-    FunctionsToExport    = @('Get-StepperSteps', 'Reset-StepperState', 'Show-StepperStatus', 'Start-Stepper')
+    FunctionsToExport    = @('Get-StepperSteps', 'New-StepperConfig', 'New-StepperScript', 'New-StepperStep', 'Reset-StepperState', 'Show-StepperStatus', 'Start-Stepper')
     GUID                 = '703e39b3-f720-48f1-94fc-3cd1ee10ab74'
-    ModuleVersion        = '2025.10.23'
+    ModuleVersion        = '2025.10.24'
     PowerShellVersion    = '5.1'
     PrivateData          = @{
         PSData = @{

@@ -6,7 +6,7 @@ function Get-StepperSteps {
     .DESCRIPTION
         Reads the stepper-config.json file and dynamically loads
         step scripts from the configured paths. Returns an array of 
-        hashtables with Name, Description, and ScriptBlock properties.
+        PSCustomObjects with Name, Description, ScriptBlock, and AcceptsAllResults properties.
         
         Steps are loaded from individual .ps1 files in the Steps directory.
         Only enabled steps are included in the returned array.
@@ -17,7 +17,7 @@ function Get-StepperSteps {
         Falls back to stepper-config.json in the module root if no match is found.
     
     .OUTPUTS
-        System.Array - Array of step definition hashtables.
+        PSCustomObject[] - Array of step definition objects with Name, Description, ScriptBlock, and AcceptsAllResults properties.
     
     .EXAMPLE
         $steps = Get-StepperSteps
@@ -156,8 +156,8 @@ function Get-StepperSteps {
             # Create scriptblock
             $scriptBlock = [ScriptBlock]::Create($scriptContent)
             
-            # Build step definition
-            $stepDefinition = @{
+            # Build step definition as PSCustomObject
+            $stepDefinition = [PSCustomObject]@{
                 Name = $stepConfig.name
                 Description = $stepConfig.description
                 ScriptBlock = $scriptBlock

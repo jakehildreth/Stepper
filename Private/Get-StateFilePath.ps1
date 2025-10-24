@@ -32,7 +32,14 @@ function Get-StateFilePath {
     
     # Store in user profile for persistence across sessions
     # Alternative: Use temp folder for session-only persistence
-    $stateDir = Join-Path -Path $env:USERPROFILE -ChildPath '.stepper'
+    # Cross-platform home directory detection
+    $homeDir = if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
+        $env:USERPROFILE
+    } else {
+        $env:HOME
+    }
+    
+    $stateDir = Join-Path -Path $homeDir -ChildPath '.stepper'
     
     if (-not (Test-Path $stateDir)) {
         New-Item -Path $stateDir -ItemType Directory -Force | Out-Null

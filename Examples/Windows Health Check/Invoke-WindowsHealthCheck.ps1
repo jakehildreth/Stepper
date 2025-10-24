@@ -66,19 +66,6 @@ if ($Reset) {
     return
 }
 
-# Display custom header
-Write-Host ""
-Write-Host "╔════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║                                                    ║" -ForegroundColor Cyan
-Write-Host "║     Windows Computer Health Check Tool            ║" -ForegroundColor Cyan
-Write-Host "║                                                    ║" -ForegroundColor Cyan
-Write-Host "╚════════════════════════════════════════════════════╝" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Computer: $env:COMPUTERNAME" -ForegroundColor Gray
-Write-Host "User: $env:USERNAME" -ForegroundColor Gray
-Write-Host "Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
-Write-Host ""
-
 # Note: Get-StepperSteps will automatically find Invoke-WindowsHealthCheck.json
 # in the same directory as this script
 

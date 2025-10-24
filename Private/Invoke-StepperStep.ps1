@@ -8,8 +8,8 @@ function Invoke-StepperStep {
         handles errors, and records results in the state object.
     
     .PARAMETER Step
-        A hashtable containing the step definition with Name, Description,
-        and ScriptBlock properties.
+        A PSCustomObject containing the step definition with Name, Description,
+        ScriptBlock, and AcceptsAllResults properties.
     
     .PARAMETER State
         The stepper state hashtable to update with results.
@@ -40,7 +40,7 @@ function Invoke-StepperStep {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory = $true)]
-        [hashtable]$Step,
+        [PSCustomObject]$Step,
         
         [Parameter(Mandatory = $true)]
         [hashtable]$State,
