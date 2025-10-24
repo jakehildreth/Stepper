@@ -4,13 +4,13 @@ function Test-StepperStateValidity {
         Validates if the saved state is still relevant.
     
     .DESCRIPTION
-        Checks the stepper state for validity by verifying:
+        Checks the Stepper state for validity by verifying:
         - Version compatibility
         - Age of the state (default max 7 days)
         - Valid timestamp format
     
     .PARAMETER State
-        The stepper state hashtable to validate.
+        The Stepper state hashtable to validate.
     
     .PARAMETER MaxAgeDays
         Maximum age in days before state is considered stale.

@@ -1,5 +1,5 @@
 {
-  "stepperSteps": [
+  "StepperSteps": [
     {
       "enabled": true,
       "name": "Step1",

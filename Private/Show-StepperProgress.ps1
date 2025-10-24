@@ -4,23 +4,23 @@ function Show-StepperProgress {
         Displays current progress summary.
     
     .DESCRIPTION
-        Shows a formatted summary of the stepper progress including:
-        - stepper ID
+        Shows a formatted summary of the Stepper progress including:
+        - Stepper ID
         - Start and update timestamps
         - Current status
         - Completed steps with durations
         - Overall percentage complete
     
     .PARAMETER State
-        The stepper state hashtable containing progress information.
+        The Stepper state hashtable containing progress information.
     
     .PARAMETER TotalSteps
-        The total number of steps in the stepper.
+        The total number of steps in the Stepper.
     
     .EXAMPLE
         Show-StepperProgress -State $state -TotalSteps 5
         
-        Displays progress for a 5-step stepper.
+        Displays progress for a 5-step Stepper.
     #>
     [CmdletBinding()]
     param(
@@ -40,7 +40,7 @@ function Show-StepperProgress {
     
     Write-Host "`nProgress Summary:" -ForegroundColor Cyan
     Write-Host ("  " + ("-" * 50)) -ForegroundColor Gray
-    Write-Host "  stepper ID    : $($State.StepperId)" -ForegroundColor Gray
+    Write-Host "  Stepper ID    : $($State.StepperId)" -ForegroundColor Gray
     Write-Host "  Started At       : $($State.StartedAt)" -ForegroundColor Gray
     Write-Host "  Last Updated     : $($State.LastUpdated)" -ForegroundColor Gray
     Write-Host "  Status           : $($State.Status)" -ForegroundColor $(

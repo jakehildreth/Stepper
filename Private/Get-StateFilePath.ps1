@@ -4,7 +4,7 @@ function Get-StateFilePath {
         Returns the path to the state file.
     
     .DESCRIPTION
-        Returns the full path to the stepper state file, creating the
+        Returns the full path to the Stepper state file, creating the
         directory if it doesn't exist.
     
     .PARAMETER FileName

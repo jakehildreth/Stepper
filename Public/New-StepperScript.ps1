@@ -1,21 +1,21 @@
 function New-StepperScript {
     <#
     .SYNOPSIS
-        Creates a new stepper script with configuration and step files.
+        Creates a new Stepper script with configuration and step files.
     
     .DESCRIPTION
-        Scaffolds a complete stepper script structure including:
+        Scaffolds a complete Stepper script structure including:
         - Main script file
         - JSON configuration file
         - Steps directory
         - Optional example step files
     
     .PARAMETER Name
-        Name of the stepper script (e.g., "My-HealthCheck").
+        Name of the Stepper script (e.g., "My-HealthCheck").
         The .ps1 extension will be added automatically.
     
     .PARAMETER Path
-        Directory where the stepper script will be created.
+        Directory where the Stepper script will be created.
         Defaults to current directory.
     
     .PARAMETER StepNames
@@ -28,12 +28,12 @@ function New-StepperScript {
     .EXAMPLE
         New-StepperScript -Name "My-HealthCheck"
         
-        Creates a new stepper script in the current directory with one example step.
+        Creates a new Stepper script in the current directory with one example step.
     
     .EXAMPLE
         New-StepperScript -Name "Security-Assessment" -Path "C:\Scripts" -StepNames "Scan", "Analyze", "Report"
         
-        Creates a security assessment stepper with three steps.
+        Creates a security assessment Stepper with three steps.
     
     .OUTPUTS
         System.IO.FileInfo - The created script file.
@@ -83,7 +83,7 @@ function New-StepperScript {
                 throw "Config file already exists: $configPath. Use -Force to overwrite."
             }
             
-            if ($PSCmdlet.ShouldProcess($scriptPath, "Create stepper script")) {
+            if ($PSCmdlet.ShouldProcess($scriptPath, "Create Stepper script")) {
                 # Create Steps directory
                 if (-not (Test-Path $stepsDir)) {
                     New-Item -Path $stepsDir -ItemType Directory -Force | Out-Null
@@ -94,10 +94,10 @@ function New-StepperScript {
                 $scriptContent = @"
 <#
 .SYNOPSIS
-    $Name stepper script.
+    $Name Stepper script.
 
 .DESCRIPTION
-    Multi-step stepper script using the Stepper module.
+    Multi-step Stepper script using the Stepper module.
     State is automatically saved and can be resumed if interrupted.
 
 .PARAMETER Fresh
@@ -112,7 +112,7 @@ function New-StepperScript {
 .EXAMPLE
     .\$Name.ps1
     
-    Run the stepper (resumes automatically if interrupted).
+    Run the Stepper (resumes automatically if interrupted).
 
 .EXAMPLE
     .\$Name.ps1 -Fresh
@@ -158,7 +158,7 @@ if (`$Reset) {
 # Note: Get-StepperSteps will automatically find $Name.json
 # in the same directory as this script
 
-# Run the stepper using Stepper module
+# Run the Stepper using Stepper module
 try {
     if (`$Fresh) {
         Start-Stepper -Fresh
@@ -185,7 +185,7 @@ Write-Host ""
                 Get-Item $scriptPath
             }
         } catch {
-            Write-Error "Failed to create stepper script: $_"
+            Write-Error "Failed to create Stepper script: $_"
             throw
         }
     }

@@ -1,25 +1,25 @@
 function New-StepperState {
     <#
     .SYNOPSIS
-        Creates a new empty stepper state object.
+        Creates a new empty Stepper state object.
     
     .DESCRIPTION
         Initializes a new hashtable containing the default structure for
-        tracking stepper progress, including metadata about the environment.
+        tracking Stepper progress, including metadata about the environment.
     
     .OUTPUTS
-        System.Collections.Hashtable - A new stepper state object.
+        System.Collections.Hashtable - A new Stepper state object.
     
     .EXAMPLE
         $state = New-StepperState
         
-        Creates a new stepper state with default values.
+        Creates a new Stepper state with default values.
     
     .NOTES
         The state object includes:
         - Version: State file format version
-        - StepperId: Unique identifier for this stepper run
-        - StartedAt: Timestamp when stepper started
+        - StepperId: Unique identifier for this Stepper run
+        - StartedAt: Timestamp when Stepper started
         - LastUpdated: Timestamp of last state update
         - CompletedSteps: Array of completed step names
         - CurrentStepIndex: Index of current/next step
@@ -31,7 +31,7 @@ function New-StepperState {
     [OutputType([hashtable])]
     param()
     
-    Write-Verbose "Creating new stepper state"
+    Write-Verbose "Creating new Stepper state"
     
     return @{
         Version = '1.0.0'

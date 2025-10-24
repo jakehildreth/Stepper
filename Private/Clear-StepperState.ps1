@@ -4,7 +4,7 @@ function Clear-StepperState {
         Removes the saved state file.
     
     .DESCRIPTION
-        Deletes the stepper state file from disk, effectively resetting
+        Deletes the Stepper state file from disk, effectively resetting
         all progress. Supports -WhatIf and -Confirm for safety.
     
     .PARAMETER Path
@@ -36,7 +36,7 @@ function Clear-StepperState {
     )
     
     if (Test-Path $Path) {
-        if ($PSCmdlet.ShouldProcess($Path, "Remove stepper state file")) {
+        if ($PSCmdlet.ShouldProcess($Path, "Remove Stepper state file")) {
             try {
                 Remove-Item -Path $Path -Force -ErrorAction Stop
                 Write-Host "State file removed: $Path" -ForegroundColor Green

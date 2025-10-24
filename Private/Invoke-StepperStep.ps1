@@ -1,10 +1,10 @@
 function Invoke-StepperStep {
     <#
     .SYNOPSIS
-        Executes a single stepper step and tracks the result.
+        Executes a single Stepper step and tracks the result.
     
     .DESCRIPTION
-        Runs the script block for a given stepper step, tracks timing,
+        Runs the script block for a given Stepper step, tracks timing,
         handles errors, and records results in the state object.
     
     .PARAMETER Step
@@ -12,7 +12,7 @@ function Invoke-StepperStep {
         ScriptBlock, and AcceptsAllResults properties.
     
     .PARAMETER State
-        The stepper state hashtable to update with results.
+        The Stepper state hashtable to update with results.
     
     .PARAMETER AllResults
         Optional hashtable containing results from all previously completed

@@ -1,7 +1,7 @@
 function Show-StepperStepHeader {
     <#
     .SYNOPSIS
-        Displays a header for the current stepper step.
+        Displays a header for the current Stepper step.
     
     .DESCRIPTION
         Shows a formatted header indicating the current step number,
@@ -14,7 +14,7 @@ function Show-StepperStepHeader {
         The current step number (1-based).
     
     .PARAMETER TotalSteps
-        The total number of steps in the stepper.
+        The total number of steps in the Stepper.
     
     .EXAMPLE
         Show-StepperStepHeader -StepName "Environment Check" -StepNumber 1 -TotalSteps 5

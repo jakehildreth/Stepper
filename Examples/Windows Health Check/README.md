@@ -97,7 +97,7 @@ Steps are defined in `Invoke-WindowsHealthCheck.json`:
 
 ```json
 {
-  "stepperSteps": [
+  "StepperSteps": [
     {
       "name": "SystemInfo",
       "description": "Collect system information",

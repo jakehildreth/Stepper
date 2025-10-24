@@ -1,10 +1,10 @@
 function Get-StepperState {
     <#
     .SYNOPSIS
-        Loads the stepper state from file, or creates a new one.
+        Loads the Stepper state from file, or creates a new one.
     
     .DESCRIPTION
-        Attempts to load a saved stepper state from disk. If the file
+        Attempts to load a saved Stepper state from disk. If the file
         doesn't exist or can't be loaded, returns a new empty state.
         
         Converts the JSON PSCustomObject back to a hashtable for easier
@@ -15,7 +15,7 @@ function Get-StepperState {
         path from Get-StateFilePath.
     
     .OUTPUTS
-        System.Collections.Hashtable - The loaded or new stepper state.
+        System.Collections.Hashtable - The loaded or new Stepper state.
     
     .EXAMPLE
         $state = Get-StepperState
@@ -29,7 +29,7 @@ function Get-StepperState {
     
     .NOTES
         If loading fails, warnings are displayed and a new state is returned.
-        This ensures the stepper can always proceed.
+        This ensures the Stepper can always proceed.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]

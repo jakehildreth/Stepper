@@ -1,14 +1,14 @@
 function Save-StepperState {
     <#
     .SYNOPSIS
-        Saves the stepper state to a JSON file.
+        Saves the Stepper state to a JSON file.
     
     .DESCRIPTION
-        Serializes the stepper state hashtable to JSON format and saves
+        Serializes the Stepper state hashtable to JSON format and saves
         it to disk. Updates the LastUpdated timestamp automatically.
     
     .PARAMETER State
-        The stepper state hashtable to save.
+        The Stepper state hashtable to save.
     
     .PARAMETER Path
         The path where the state file should be saved. If not specified,

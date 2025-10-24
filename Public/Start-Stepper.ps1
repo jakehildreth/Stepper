@@ -1,19 +1,19 @@
 function Start-Stepper {
     <#
     .SYNOPSIS
-        Main function to run the multi-step stepper.
+        Main function to run the multi-step Stepper.
     
     .DESCRIPTION
-        Orchestrates the execution of all stepper steps, manages state
+        Orchestrates the execution of all Stepper steps, manages state
         persistence, handles errors, and provides progress feedback.
         
         By default, resumes from the last saved state. Use -Fresh to start over.
     
     .PARAMETER Fresh
-        Start a completely new stepper, ignoring any saved state.
+        Start a completely new Stepper, ignoring any saved state.
     
     .PARAMETER ConfigPath
-        Path to the stepper configuration JSON file. If not specified, attempts to find
+        Path to the Stepper configuration JSON file. If not specified, attempts to find
         a JSON file with the same base name as the calling script (e.g., MyScript.ps1 -> MyScript.json).
         Falls back to stepper-config.json in the module root if no match is found.
     
@@ -26,7 +26,7 @@ function Start-Stepper {
     .EXAMPLE
         Start-Stepper -Fresh
         
-        Starts a completely new stepper from the beginning.
+        Starts a completely new Stepper from the beginning.
     
     .EXAMPLE
         Start-Stepper -ConfigPath ".\my-steps.json"
@@ -35,7 +35,7 @@ function Start-Stepper {
     
     .NOTES
         State is automatically saved after each step.
-        The stepper can be safely interrupted and resumed later.
+        The Stepper can be safely interrupted and resumed later.
         Completed steps can be skipped or re-run interactively.
     #>
     [CmdletBinding()]
@@ -49,7 +49,7 @@ function Start-Stepper {
     
     Show-StepperHeader
     
-    # Get all stepper steps
+    # Get all Stepper steps
     if ($ConfigPath) {
         $steps = Get-StepperSteps -ConfigPath $ConfigPath
     } else {
@@ -62,7 +62,7 @@ function Start-Stepper {
     # Load or create state (default is to resume)
     $state = if ($Fresh) {
         # User explicitly wants to start fresh
-        Write-Host "Starting fresh stepper (ignoring saved state)..." -ForegroundColor Cyan
+        Write-Host "Starting fresh Stepper (ignoring saved state)..." -ForegroundColor Cyan
         New-StepperState
     } else {
         # Default behavior: try to resume
@@ -72,8 +72,8 @@ function Start-Stepper {
         $existingState = Get-StepperState
         
         if ($existingState.Status -eq 'Completed') {
-            Write-Host "Previous stepper was completed." -ForegroundColor Yellow
-            Write-Host "Do you want to start a new stepper? (Y/N): " -NoNewline -ForegroundColor Yellow
+            Write-Host "Previous Stepper was completed." -ForegroundColor Yellow
+            Write-Host "Do you want to start a new Stepper? (Y/N): " -NoNewline -ForegroundColor Yellow
             $response = Read-Host
             
             if ($response -eq 'Y') {
@@ -155,7 +155,7 @@ function Start-Stepper {
             $state.Status = 'Failed'
             Save-StepperState -State $state
             
-            Write-Host "`nstepper stopped due to error." -ForegroundColor Red
+            Write-Host "`nStepper stopped due to error." -ForegroundColor Red
             Write-Host "State saved. You can resume later with the -Resume switch." -ForegroundColor Yellow
             Write-Host "State file location: $(Get-StateFilePath)" -ForegroundColor Gray
             return
@@ -175,7 +175,7 @@ function Start-Stepper {
     
     # Show final summary
     Write-Host "`n" + ("=" * 70) -ForegroundColor Green
-    Write-Host " stepper Complete!" -ForegroundColor Green
+    Write-Host " Stepper Complete!" -ForegroundColor Green
     Write-Host ("=" * 70) -ForegroundColor Green
     
     Show-StepperProgress -State $state -TotalSteps $totalSteps

@@ -3,7 +3,7 @@
   "title": "Windows Health Check Configuration",
   "description": "Configuration file defining the steps for a Windows computer health check",
   "version": "1.0.0",
-  "stepperSteps": [
+  "StepperSteps": [
     {
       "name": "SystemInfo",
       "description": "Collect system information and uptime",

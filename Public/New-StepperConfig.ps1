@@ -1,7 +1,7 @@
 function New-StepperConfig {
     <#
     .SYNOPSIS
-        Creates a new JSON configuration file for a stepper.
+        Creates a new JSON configuration file for a Stepper.
     
     .DESCRIPTION
         Generates a JSON configuration file with step definitions.
@@ -80,7 +80,7 @@ function New-StepperConfig {
                 throw "Config file already exists: $configPath. Use -Force to overwrite."
             }
             
-            if ($PSCmdlet.ShouldProcess($configPath, "Create stepper configuration")) {
+            if ($PSCmdlet.ShouldProcess($configPath, "Create Stepper configuration")) {
                 # Build step definitions
                 $steps = @()
                 $order = 1
@@ -99,7 +99,7 @@ function New-StepperConfig {
                 
                 # Create config object
                 $config = @{
-                    stepperSteps = $steps
+                    StepperSteps = $steps
                 }
                 
                 # Convert to JSON and save
@@ -119,7 +119,7 @@ function New-StepperConfig {
                 Get-Item $configPath
             }
         } catch {
-            Write-Error "Failed to create stepper config: $_"
+            Write-Error "Failed to create Stepper config: $_"
             throw
         }
     }

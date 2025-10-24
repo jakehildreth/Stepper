@@ -1,7 +1,7 @@
 function Get-StepperSteps {
     <#
     .SYNOPSIS
-        Loads stepper steps from JSON configuration.
+        Loads Stepper steps from JSON configuration.
     
     .DESCRIPTION
         Reads the stepper-config.json file and dynamically loads
@@ -32,7 +32,7 @@ function Get-StepperSteps {
     .NOTES
         Configuration file structure:
         {
-          "stepperSteps": [
+          "StepperSteps": [
             {
               "name": "StepName",
               "description": "Step description",
@@ -59,7 +59,7 @@ function Get-StepperSteps {
         [string]$ConfigPath
     )
     
-    Write-Verbose "Loading stepper step configuration"
+    Write-Verbose "Loading Stepper step configuration"
     
     # Default config path logic
     if (-not $ConfigPath) {
@@ -113,17 +113,17 @@ function Get-StepperSteps {
     }
     
     # Validate configuration structure
-    if (-not $config.stepperSteps) {
-        throw "Invalid configuration: 'stepperSteps' property not found"
+    if (-not $config.StepperSteps) {
+        throw "Invalid configuration: 'StepperSteps' property not found"
     }
     
-    Write-Verbose "Found $($config.stepperSteps.Count) step(s) in configuration"
+    Write-Verbose "Found $($config.StepperSteps.Count) step(s) in configuration"
     
     # Build step definitions
     $steps = @()
     
     # Sort by order and filter to enabled only
-    $enabledSteps = $config.stepperSteps | Where-Object { $_.enabled -eq $true } | Sort-Object -Property order
+    $enabledSteps = $config.StepperSteps | Where-Object { $_.enabled -eq $true } | Sort-Object -Property order
     
     Write-Verbose "Processing $($enabledSteps.Count) enabled step(s)"
     

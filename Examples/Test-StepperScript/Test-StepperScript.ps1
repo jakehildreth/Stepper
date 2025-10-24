@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Test-StepperScript stepper script.
+    Test-StepperScript Stepper script.
 
 .DESCRIPTION
-    Multi-step stepper script using the Stepper module.
+    Multi-step Stepper script using the Stepper module.
     State is automatically saved and can be resumed if interrupted.
 
 .PARAMETER Fresh
@@ -18,7 +18,7 @@
 .EXAMPLE
     .\Test-StepperScript.ps1
     
-    Run the stepper (resumes automatically if interrupted).
+    Run the Stepper (resumes automatically if interrupted).
 
 .EXAMPLE
     .\Test-StepperScript.ps1 -Fresh
@@ -64,7 +64,7 @@ if ($Reset) {
 # Note: Get-StepperSteps will automatically find Test-StepperScript.json
 # in the same directory as this script
 
-# Run the stepper using Stepper module
+# Run the Stepper using Stepper module
 try {
     if ($Fresh) {
         Start-Stepper -Fresh

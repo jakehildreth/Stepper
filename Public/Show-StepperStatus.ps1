@@ -1,21 +1,21 @@
 function Show-StepperStatus {
     <#
     .SYNOPSIS
-        Displays the current stepper progress without running any steps.
+        Displays the current Stepper progress without running any steps.
     
     .DESCRIPTION
-        Shows the progress summary of the current or last stepper including
+        Shows the progress summary of the current or last Stepper including
         completed steps, current status, and overall progress percentage.
         
-        Useful for checking on stepper status without starting or resuming.
+        Useful for checking on Stepper status without starting or resuming.
     
     .EXAMPLE
         Show-StepperStatus
         
-        Displays current stepper progress.
+        Displays current Stepper progress.
     
     .NOTES
-        If no stepper state exists, indicates that no stepper has been started.
+        If no Stepper state exists, indicates that no Stepper has been started.
     #>
     [CmdletBinding()]
     param()
@@ -28,17 +28,17 @@ function Show-StepperStatus {
     if ($state.CompletedSteps.Count -eq 0 -and $state.Status -eq 'InProgress' -and 
         [DateTime]::Parse($state.StartedAt) -gt (Get-Date).AddMinutes(-1)) {
         # This is a brand new state that was just created
-        Write-Host "No stepper progress found." -ForegroundColor Yellow
-        Write-Host "Run 'Start-Stepper' to begin a new stepper." -ForegroundColor Gray
+        Write-Host "No Stepper progress found." -ForegroundColor Yellow
+        Write-Host "Run 'Start-Stepper' to begin a new Stepper." -ForegroundColor Gray
     } else {
         Show-StepperProgress -State $state -TotalSteps $steps.Count
         
         if ($state.Status -eq 'InProgress') {
-            Write-Host "Run 'Start-Stepper -Resume' to continue the stepper." -ForegroundColor Cyan
+            Write-Host "Run 'Start-Stepper -Resume' to continue the Stepper." -ForegroundColor Cyan
         } elseif ($state.Status -eq 'Failed') {
             Write-Host "Run 'Start-Stepper -Resume' to retry from the failed step." -ForegroundColor Yellow
         } else {
-            Write-Host "stepper is complete. Run 'Reset-StepperState' to start fresh." -ForegroundColor Green
+            Write-Host "Stepper is complete. Run 'Reset-StepperState' to start fresh." -ForegroundColor Green
         }
     }
 }
