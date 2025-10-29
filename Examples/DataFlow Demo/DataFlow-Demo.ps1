@@ -5,6 +5,11 @@
 .DESCRIPTION
     Multi-step Stepper script using the Stepper module.
     State is automatically saved and can be resumed if interrupted.
+    Demonstrates passing initial data to all steps.
+
+.PARAMETER UserName
+    Name of the user running the health check. This will be passed to all steps
+    and used in the final report.
 
 .PARAMETER Fresh
     Start fresh, ignoring any saved state.
@@ -16,14 +21,14 @@
     Reset all saved progress.
 
 .EXAMPLE
-    .\DataFlow-Demo.ps1
+    .\DataFlow-Demo.ps1 -UserName "Alice"
     
-    Run the Stepper (resumes automatically if interrupted).
+    Run the Stepper with user name (resumes automatically if interrupted).
 
 .EXAMPLE
-    .\DataFlow-Demo.ps1 -Fresh
+    .\DataFlow-Demo.ps1 -UserName "Bob" -Fresh
     
-    Start fresh, ignoring any saved state.
+    Start fresh with a specific user name, ignoring any saved state.
 
 .NOTES
     Requires: Stepper module
@@ -31,6 +36,9 @@
 #>
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false)]
+    [string]$UserName = $env:USER,
+    
     [Parameter(Mandatory = $false)]
     [switch]$Fresh,
     
@@ -66,10 +74,16 @@ if ($Reset) {
 
 # Run the Stepper using Stepper module
 try {
+    # Create initial data to pass to all steps
+    $initialData = @{
+        UserName = $UserName
+        StartTime = Get-Date
+    }
+    
     if ($Fresh) {
-        Start-Stepper -Fresh
+        Start-Stepper -Fresh -InitialData $initialData
     } else {
-        Start-Stepper
+        Start-Stepper -InitialData $initialData
     }
     
     # Start-Stepper displays its own completion message when fully complete

@@ -1,31 +1,15 @@
 <#
 .SYNOPSIS
-    Step 1: Gather system information
+    Gather system information
 
 .DESCRIPTION
     Collects basic system information including OS, CPU, and Memory.
     Returns a hashtable that will be passed to subsequent steps.
-
-.PARAMETER StepName
-    Name of this step
-
-.PARAMETER StepOrder
-    Order of this step in the sequence
 #>
 [CmdletBinding()]
-param(
-    [Parameter(Mandatory = $false)]
-    [string]$StepName = "Gather-SystemInfo",
+param()
 
-    [Parameter(Mandatory = $false)]
-    [int]$StepOrder = 1
-)
-
-Write-Host "`n==================================="
-Write-Host "Step $StepOrder : $StepName"
-Write-Host "==================================="
-
-Write-Host "`nCollecting system information..." -ForegroundColor Cyan
+Write-Host "Collecting system information..." -ForegroundColor Cyan
 
 # Gather OS Information
 $os = if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {

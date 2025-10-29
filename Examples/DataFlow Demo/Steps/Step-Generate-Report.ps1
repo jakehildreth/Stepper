@@ -1,53 +1,42 @@
 <#
 .SYNOPSIS
-    Step 3: Generate comprehensive report
+    Generate comprehensive report
 
 .DESCRIPTION
     Generates a final report using data from both Step 1 (system info) and Step 2 (performance analysis).
-    Demonstrates receiving data from multiple previous steps.
+    Demonstrates receiving data from multiple previous steps and initial data.
 
-.PARAMETER StepName
-    Name of this step
-
-.PARAMETER StepOrder
-    Order of this step in the sequence
-
-.PARAMETER AllResults
-    Array of all previous step results.
-    AllResults[1] contains Step 1 results.
-    AllResults[2] contains Step 2 results.
+.PARAMETER AllData
+    Array of all data including initial data and previous step results.
+    AllData[0] contains initial data (UserName, StartTime).
+    AllData[1] contains Step 1 results.
+    AllData[2] contains Step 2 results.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$StepName = "Generate-Report",
-
-    [Parameter(Mandatory = $false)]
-    [int]$StepOrder = 3,
-
-    [Parameter(Mandatory = $false)]
-    [array]$AllResults
+    [array]$AllData
 )
 
-Write-Host "`n==================================="
-Write-Host "Step $StepOrder : $StepName"
-Write-Host "==================================="
+Write-Host "Generating comprehensive report..." -ForegroundColor Cyan
 
-Write-Host "`nGenerating comprehensive report..." -ForegroundColor Cyan
+# Extract initial data and results from previous steps
+$initialData = $AllData[0]  # Initial data (UserName, StartTime)
+$systemInfo = $AllData[1]  # Step 1 results
+$performanceAnalysis = $AllData[2]  # Step 2 results
 
-# Extract results from previous steps using intuitive indexing
-$systemInfo = $AllResults[1]  # Step 1 results
-$performanceAnalysis = $AllResults[2]  # Step 2 results
-
-Write-Host "`nReceived data from previous steps:"
-Write-Host "  AllResults[1] (Step 1): OS, CPU, Memory details"
-Write-Host "  AllResults[2] (Step 2): Performance ratings and recommendations"
+Write-Host "Received data from previous steps:" -ForegroundColor Cyan
+Write-Host "  AllData[0] (Initial): UserName, StartTime"
+Write-Host "  AllData[1] (Step 1): OS, CPU, Memory details"
+Write-Host "  AllData[2] (Step 2): Performance ratings and recommendations"
 
 # Generate report
 Write-Host ""
 Write-Host ("=" * 70)
 Write-Host "               SYSTEM HEALTH REPORT"
 Write-Host ("=" * 70)
+Write-Host ""
+Write-Host "$($initialData.UserName), here is the report on your system:" -ForegroundColor Cyan
 
 Write-Host "`n--- SYSTEM INFORMATION ---"
 Write-Host "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"

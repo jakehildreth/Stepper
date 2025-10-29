@@ -1,41 +1,25 @@
 <#
 .SYNOPSIS
-    Step 2: Analyze system performance
+    Analyze system performance
 
 .DESCRIPTION
     Analyzes system performance based on the system information from Step 1.
     Returns performance metrics that will be used in Step 3.
 
-.PARAMETER StepName
-    Name of this step
-
-.PARAMETER StepOrder
-    Order of this step in the sequence
-
-.PARAMETER AllResults
+.PARAMETER AllData
     Array of results from all previous steps. 
-    AllResults[1] contains Step 1 results.
+    AllData[1] contains Step 1 results.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$StepName = "Analyze-Performance",
-
-    [Parameter(Mandatory = $false)]
-    [int]$StepOrder = 2,
-
-    [Parameter(Mandatory = $false)]
-    [array]$AllResults
+    [array]$AllData
 )
 
-Write-Host "`n==================================="
-Write-Host "Step $StepOrder : $StepName"
-Write-Host "==================================="
-
 # Get Step 1 results
-$systemInfo = $AllResults[1]
+$systemInfo = $AllData[1]
 
-Write-Host "`nReceived data from Step 1:" -ForegroundColor Cyan
+Write-Host "Received data from Step 1:" -ForegroundColor Cyan
 Write-Host "  OS: $($systemInfo.OS.Name)"
 Write-Host "  CPU Cores: $($systemInfo.CPU.PhysicalCores)"
 Write-Host "  Memory: $($systemInfo.MemoryGB) GB"

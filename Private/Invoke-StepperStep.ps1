@@ -14,10 +14,10 @@ function Invoke-StepperStep {
     .PARAMETER State
         The Stepper state hashtable to update with results.
     
-    .PARAMETER AllResults
+    .PARAMETER AllData
         Optional array containing results from all previously completed steps.
-        Array index matches step number: AllResults[1] = Step 1 result, 
-        AllResults[2] = Step 2 result, etc. AllResults[0] is always $null.
+        Array index matches step number: AllData[1] = Step 1 result, 
+        AllData[2] = Step 2 result, etc. AllData[0] is reserved for initial input data.
     
     .OUTPUTS
         System.Boolean - $true if step succeeded, $false if it failed.
@@ -47,7 +47,7 @@ function Invoke-StepperStep {
         [hashtable]$State,
         
         [Parameter(Mandatory = $false)]
-        [array]$AllResults = @()
+        [array]$AllData = @()
     )
     
     $stepName = $Step.Name
@@ -57,11 +57,11 @@ function Invoke-StepperStep {
     
     try {
         # Execute the step's script block
-        # Always pass AllResults if there are previous results
-        # Array index matches step number: AllResults[1] = Step 1, etc.
-        $result = if ($AllResults.Count -gt 1) {
-            Write-Verbose "Passing AllResults array to step (Count: $($AllResults.Count - 1) previous results)"
-            & $Step.ScriptBlock -AllResults $AllResults
+        # Always pass AllData if there are previous results
+        # Array index matches step number: AllData[1] = Step 1, etc.
+        $result = if ($AllData.Count -gt 1) {
+            Write-Verbose "Passing AllData array to step (Count: $($AllData.Count - 1) previous results)"
+            & $Step.ScriptBlock -AllData $AllData
         } else {
             Write-Verbose "No previous results to pass, executing directly"
             & $Step.ScriptBlock

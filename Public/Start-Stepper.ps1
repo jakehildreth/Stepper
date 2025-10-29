@@ -17,6 +17,10 @@ function Start-Stepper {
         a JSON file with the same base name as the calling script (e.g., MyScript.ps1 -> MyScript.json).
         Falls back to stepper-config.json in the module root if no match is found.
     
+    .PARAMETER InitialData
+        Optional data to pass to all steps as AllData[0]. This allows passing context
+        or parameters from the main script to all step scripts.
+    
     .EXAMPLE
         Start-Stepper
         
@@ -44,7 +48,10 @@ function Start-Stepper {
         [switch]$Fresh,
         
         [Parameter(Mandatory = $false)]
-        [string]$ConfigPath
+        [string]$ConfigPath,
+        
+        [Parameter(Mandatory = $false)]
+        [object]$InitialData
     )
     
     Show-StepperHeader
@@ -150,20 +157,20 @@ function Start-Stepper {
         }
         
         # Prepare all results for steps that need them
-        # Array index matches step number: AllResults[1] = Step 1 result, etc.
-        # AllResults[0] is $null to make indexing intuitive
-        $allResults = @($null)
+        # Array index matches step number: AllData[1] = Step 1 result, etc.
+        # AllData[0] is reserved for initial input data (future feature)
+        $allData = @($InitialData)
         for ($j = 0; $j -lt $i; $j++) {
             $previousStep = $steps[$j]
             if ($state.CompletedSteps -contains $previousStep.Name -and $state.StepResults.ContainsKey($previousStep.Name)) {
-                $allResults += $state.StepResults[$previousStep.Name].Result
+                $allData += $state.StepResults[$previousStep.Name].Result
             } else {
-                $allResults += $null
+                $allData += $null
             }
         }
         
         # Execute the step
-        $success = Invoke-StepperStep -Step $step -State $state -AllResults $allResults
+        $success = Invoke-StepperStep -Step $step -State $state -AllData $allData
         
         # Update current step index
         $state.CurrentStepIndex = $i + 1
