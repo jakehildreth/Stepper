@@ -62,9 +62,22 @@ function New-StepperScript {
             $Name = [System.IO.Path]::GetFileNameWithoutExtension($Name)
         }
         
-        # Validate path
+        # Validate path and offer to create if it doesn't exist
         if (-not (Test-Path $Path)) {
-            throw "Path does not exist: $Path"
+            $title = "Directory Does Not Exist"
+            $message = "Path does not exist: $Path`nCreate directory?"
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create the directory"
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Cancel operation"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 0) {
+                Write-Verbose "Creating directory: $Path"
+                New-Item -Path $Path -ItemType Directory -Force | Out-Null
+            }
+            else {
+                throw "Path does not exist and was not created: $Path"
+            }
         }
         
         $scriptPath = Join-Path -Path $Path -ChildPath "$Name.ps1"
@@ -165,14 +178,13 @@ try {
     } else {
         Start-Stepper
     }
+    
+    # Start-Stepper displays its own completion message when fully complete
+    # No need to display additional message here
 } catch {
     Write-Error "Stepper failed: `$_"
     return
 }
-
-Write-Host ""
-Write-Host "Stepper complete! Review the results above." -ForegroundColor Green
-Write-Host ""
 "@
                 
                 $scriptContent | Set-Content -Path $scriptPath -Encoding UTF8 -Force

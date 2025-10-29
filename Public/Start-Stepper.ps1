@@ -73,10 +73,15 @@ function Start-Stepper {
         
         if ($existingState.Status -eq 'Completed') {
             Write-Host "Previous Stepper was completed." -ForegroundColor Yellow
-            Write-Host "Do you want to start a new Stepper? (Y/N): " -NoNewline -ForegroundColor Yellow
-            $response = Read-Host
             
-            if ($response -eq 'Y') {
+            $title = "Start New Stepper"
+            $message = "Do you want to start a new Stepper?"
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Start a new Stepper from the beginning"
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Exit without running"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 1)
+            
+            if ($choice -eq 0) {
                 New-StepperState
             } else {
                 Write-Host "Exiting..." -ForegroundColor Gray
@@ -84,10 +89,15 @@ function Start-Stepper {
             }
         } elseif (-not (Test-StepperStateValidity -State $existingState)) {
             Write-Host "Saved state is invalid or too old." -ForegroundColor Yellow
-            Write-Host "Do you want to start fresh? (Y/N): " -NoNewline -ForegroundColor Yellow
-            $response = Read-Host
             
-            if ($response -eq 'Y') {
+            $title = "Invalid State"
+            $message = "Do you want to start fresh?"
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Clear state and start over"
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Use existing state anyway"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 0) {
                 Clear-StepperState -Confirm:$false
                 New-StepperState
             } else {
@@ -123,10 +133,15 @@ function Start-Stepper {
         # Check if already completed
         if ($state.CompletedSteps -contains $step.Name) {
             Write-Host "  This step was already completed." -ForegroundColor Yellow
-            Write-Host "  Do you want to skip it? (Y/N): " -NoNewline -ForegroundColor Yellow
-            $skip = Read-Host
             
-            if ($skip -eq 'Y') {
+            $title = "Step Already Completed"
+            $message = "Do you want to skip this step?"
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Skip this step and continue"
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Re-run this step"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 0) {
                 Write-Host "  Skipping..." -ForegroundColor Gray
                 continue
             } else {
@@ -163,8 +178,18 @@ function Start-Stepper {
         
         # Prompt to continue after each step (except last)
         if ($i -lt ($totalSteps - 1)) {
-            Write-Host "`n  Press Enter to continue to the next step, or Ctrl+C to stop..." -ForegroundColor Cyan
-            Read-Host | Out-Null
+            Write-Host ""
+            $title = "Continue to Next Step"
+            $message = "Ready to continue?"
+            $continue = New-Object System.Management.Automation.Host.ChoiceDescription "&Continue", "Continue to the next step"
+            $stop = New-Object System.Management.Automation.Host.ChoiceDescription "&Stop", "Stop and save progress (Ctrl+C also works)"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($continue, $stop)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 1) {
+                Write-Host "`nStopping... Progress has been saved." -ForegroundColor Yellow
+                return
+            }
         }
     }
     
@@ -174,7 +199,8 @@ function Start-Stepper {
     Save-StepperState -State $state
     
     # Show final summary
-    Write-Host "`n" + ("=" * 70) -ForegroundColor Green
+    Write-Host ""
+    Write-Host ("=" * 70) -ForegroundColor Green
     Write-Host " Stepper Complete!" -ForegroundColor Green
     Write-Host ("=" * 70) -ForegroundColor Green
     

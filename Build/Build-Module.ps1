@@ -1,4 +1,4 @@
-﻿param (
+param (
     # A CalVer string if you need to manually override the default yyyy.M.d version string.
     [string]$CalVer
 )
@@ -84,10 +84,12 @@ Build-Module -ModuleName 'Stepper' {
     }
     # format PSD1 and PSM1 files when merging into a single file
     # enable formatting is not required as Configuration is provided
-    New-ConfigurationFormat -ApplyTo 'OnMergePSM1', 'OnMergePSD1' -Sort None @ConfigurationFormat
+    # DISABLED: Causes issues with PSScriptAnalyzer inside VSCode
+    # New-ConfigurationFormat -ApplyTo 'OnMergePSM1', 'OnMergePSD1' -Sort None @ConfigurationFormat
     # format PSD1 and PSM1 files within the module
     # enable formatting is required to make sure that formatting is applied (with default settings)
-    New-ConfigurationFormat -ApplyTo 'DefaultPSD1', 'DefaultPSM1' -EnableFormatting -Sort None
+    # DISABLED: Causes issues with PSScriptAnalyzer inside VSCode
+    # New-ConfigurationFormat -ApplyTo 'DefaultPSD1', 'DefaultPSM1' -EnableFormatting -Sort None
     # when creating PSD1 use special style without comments and with only required parameters
     New-ConfigurationFormat -ApplyTo 'DefaultPSD1', 'OnMergePSD1' -PSD1Style 'Minimal'
 

@@ -1,11 +1,11 @@
-function New-StepperConfig {
+﻿function New-StepperConfig {
     <#
     .SYNOPSIS
         Creates a new JSON configuration file for a Stepper.
     
     .DESCRIPTION
         Generates a JSON configuration file with step definitions.
-        Can optionally create the step script files as well.
+        Creates the step script files by default.
     
     .PARAMETER Name
         Name of the configuration (without .json extension).
@@ -17,21 +17,21 @@ function New-StepperConfig {
     .PARAMETER StepNames
         Array of step names to include in the configuration.
     
-    .PARAMETER CreateStepFiles
-        If specified, also creates the step script files.
+    .PARAMETER SkipStepFiles
+        If specified, does not create the step script files.
     
     .PARAMETER Force
-        Overwrite existing file if it exists.
+        Overwrite existing files if they exist.
     
     .EXAMPLE
         New-StepperConfig -Name "My-Script" -StepNames "Step1", "Step2"
         
-        Creates My-Script.json with two step definitions.
+        Creates My-Script.json with two step definitions and creates the step files.
     
     .EXAMPLE
-        New-StepperConfig -Name "Health-Check" -StepNames "DiskSpace", "Services" -CreateStepFiles
+        New-StepperConfig -Name "Health-Check" -StepNames "DiskSpace", "Services" -SkipStepFiles
         
-        Creates config and step files.
+        Creates config only, without step files.
     
     .OUTPUTS
         System.IO.FileInfo - The created JSON file.
@@ -50,7 +50,7 @@ function New-StepperConfig {
         [string[]]$StepNames,
         
         [Parameter(Mandatory = $false)]
-        [switch]$CreateStepFiles,
+        [switch]$SkipStepFiles,
         
         [Parameter(Mandatory = $false)]
         [switch]$Force
@@ -64,9 +64,22 @@ function New-StepperConfig {
             $Name = [System.IO.Path]::GetFileNameWithoutExtension($Name)
         }
         
-        # Validate path
+        # Validate path and offer to create if it doesn't exist
         if (-not (Test-Path $Path)) {
-            throw "Path does not exist: $Path"
+            $title = "Directory Does Not Exist"
+            $message = "Path does not exist: $Path`nCreate directory?"
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Create the directory"
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Cancel operation"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 0) {
+                Write-Verbose "Creating directory: $Path"
+                New-Item -Path $Path -ItemType Directory -Force | Out-Null
+            }
+            else {
+                throw "Path does not exist and was not created: $Path"
+            }
         }
         
         $configPath = Join-Path -Path $Path -ChildPath "$Name.json"
@@ -108,10 +121,25 @@ function New-StepperConfig {
                 
                 Write-Host "Created config: $configPath" -ForegroundColor Green
                 
-                # Optionally create step files
-                if ($CreateStepFiles) {
+                # Create step files by default (unless -SkipStepFiles is specified)
+                if (-not $SkipStepFiles) {
+                    # Ensure Steps directory exists
+                    if (-not (Test-Path $stepsDir)) {
+                        Write-Verbose "Creating Steps directory: $stepsDir"
+                        New-Item -Path $stepsDir -ItemType Directory -Force | Out-Null
+                    }
+                    
+                    Write-Verbose "Creating step files..."
                     foreach ($stepName in $StepNames) {
-                        New-StepperStep -Name $stepName -Path $stepsDir -Force:$Force | Out-Null
+                        if ($PSCmdlet.ShouldProcess("Step-$stepName.ps1", "Create step script")) {
+                            try {
+                                New-StepperStep -Name $stepName -Path $stepsDir -Force:$Force | Out-Null
+                                Write-Host "  Created step: Step-$stepName.ps1" -ForegroundColor Gray
+                            }
+                            catch {
+                                Write-Warning "Failed to create step file for '$stepName': $_"
+                            }
+                        }
                     }
                 }
                 
