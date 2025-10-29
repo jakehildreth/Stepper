@@ -67,33 +67,18 @@ function Start-Stepper {
     Write-Verbose "Total steps defined: $totalSteps"
     
     # Load or create state (default is to resume)
-    $state = if ($Fresh) {
+    if ($Fresh) {
         # User explicitly wants to start fresh
         Write-Host "Starting fresh Stepper (ignoring saved state)..." -ForegroundColor Cyan
-        New-StepperState
+        $state = New-StepperState
     } else {
         # Default behavior: try to resume
         $existingState = Get-StepperState
         
-        # Default behavior: try to resume
-        $existingState = Get-StepperState
-        
         if ($existingState.Status -eq 'Completed') {
-            Write-Host "Previous Stepper was completed." -ForegroundColor Yellow
-            
-            $title = "Start New Stepper"
-            $message = "Do you want to start a new Stepper?"
-            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Start a new Stepper from the beginning"
-            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Exit without running"
-            $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
-            $choice = $host.UI.PromptForChoice($title, $message, $options, 1)
-            
-            if ($choice -eq 0) {
-                New-StepperState
-            } else {
-                Write-Host "Exiting..." -ForegroundColor Gray
-                return
-            }
+            # Previous session completed - automatically start new one
+            Write-Host "Starting new Stepper session..." -ForegroundColor Cyan
+            $state = New-StepperState
         } elseif (-not (Test-StepperStateValidity -State $existingState)) {
             Write-Host "Saved state is invalid or too old." -ForegroundColor Yellow
             
@@ -106,14 +91,34 @@ function Start-Stepper {
             
             if ($choice -eq 0) {
                 Clear-StepperState -Confirm:$false
-                New-StepperState
+                $state = New-StepperState
             } else {
                 Write-Host "Using existing state anyway..." -ForegroundColor Yellow
-                $existingState
+                $state = $existingState
             }
         } else {
-            Write-Host "Resuming from saved state..." -ForegroundColor Cyan
-            $existingState
+            # Valid in-progress state found
+            Write-Host "Found existing Stepper session in progress." -ForegroundColor Yellow
+            
+            $title = "Resume or Start Fresh"
+            $message = "Do you want to resume from where you left off?"
+            $resumeChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Resume", "Continue from the last completed step"
+            $freshChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Fresh", "Start over from the beginning"
+            $cancelChoice = New-Object System.Management.Automation.Host.ChoiceDescription "&Cancel", "Exit without running"
+            $options = [System.Management.Automation.Host.ChoiceDescription[]]($resumeChoice, $freshChoice, $cancelChoice)
+            $choice = $host.UI.PromptForChoice($title, $message, $options, 0)
+            
+            if ($choice -eq 0) {
+                Write-Host "Resuming from saved state..." -ForegroundColor Cyan
+                $state = $existingState
+            } elseif ($choice -eq 1) {
+                Write-Host "Starting fresh..." -ForegroundColor Cyan
+                Clear-StepperState -Confirm:$false
+                $state = New-StepperState
+            } else {
+                Write-Host "Exiting..." -ForegroundColor Gray
+                return
+            }
         }
     }
     
