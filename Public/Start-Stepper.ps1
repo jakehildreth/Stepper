@@ -150,10 +150,15 @@ function Start-Stepper {
         }
         
         # Prepare all results for steps that need them
-        $allResults = @{}
-        foreach ($completedStep in $state.CompletedSteps) {
-            if ($state.StepResults.ContainsKey($completedStep)) {
-                $allResults[$completedStep] = $state.StepResults[$completedStep].Result
+        # Array index matches step number: AllResults[1] = Step 1 result, etc.
+        # AllResults[0] is $null to make indexing intuitive
+        $allResults = @($null)
+        for ($j = 0; $j -lt $i; $j++) {
+            $previousStep = $steps[$j]
+            if ($state.CompletedSteps -contains $previousStep.Name -and $state.StepResults.ContainsKey($previousStep.Name)) {
+                $allResults += $state.StepResults[$previousStep.Name].Result
+            } else {
+                $allResults += $null
             }
         }
         

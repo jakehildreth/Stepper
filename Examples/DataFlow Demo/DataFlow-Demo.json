@@ -1,0 +1,25 @@
+{
+  "StepperSteps": [
+    {
+      "scriptPath": "Step-Gather-SystemInfo.ps1",
+      "order": 1,
+      "enabled": true,
+      "name": "Gather-SystemInfo",
+      "description": "Collects system information (OS, CPU, Memory)"
+    },
+    {
+      "scriptPath": "Step-Analyze-Performance.ps1",
+      "order": 2,
+      "enabled": true,
+      "name": "Analyze-Performance",
+      "description": "Analyzes performance using system info from Step 1"
+    },
+    {
+      "scriptPath": "Step-Generate-Report.ps1",
+      "order": 3,
+      "enabled": true,
+      "name": "Generate-Report",
+      "description": "Generates final report using data from Steps 1 and 2"
+    }
+  ]
+}
