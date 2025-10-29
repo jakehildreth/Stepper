@@ -1,6 +1,7 @@
 param (
     # A CalVer string if you need to manually override the default yyyy.M.d version string.
-    [string]$CalVer
+    [string]$CalVer,
+    [switch]$PublishToPSGallery
 )
 
 if (Get-Module -Name 'PSPublishModule' -ListAvailable) {
@@ -104,6 +105,6 @@ Build-Module -ModuleName 'Stepper' {
     # New-ConfigurationArtefact -Type Packed -Enable -Path "$PSScriptRoot\..\Artefacts\Packed" -IncludeTagName 
 
     # global options for publishing to github/psgallery
-    # New-ConfigurationPublish -Type PowerShellGallery -FilePath 'C:\Users\Administrator.adcs\Documents\PowerShellGalleryAPI.txt' -Enabled:$false
-    # New-ConfigurationPublish -Type GitHub -FilePath 'C:\Support\Important\GitHubAPI.txt' -UserName 'CompanyName' -Enabled:$false
-}
+    if($PublishToPSGallery) {   
+        New-ConfigurationPublish -Type PowerShellGallery -FilePath 'C:\Users\Administrator.adcs\Documents\PowerShellGalleryAPI.txt' -Enabled:$false
+    }
