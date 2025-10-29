@@ -9,7 +9,7 @@
     FileList=@('Stepper.psm1',        'Stepper.psd1')
     FunctionsToExport=@('Get-StepperSteps',        'New-StepperConfig',        'New-StepperScript',        'New-StepperStep',        'Reset-StepperState',        'Show-StepperStatus',        'Start-Stepper')
     GUID='703e39b3-f720-48f1-94fc-3cd1ee10ab74'
-    ModuleVersion='2025.10.29'
+    ModuleVersion='2025.10.29.1137'
     PowerShellVersion='5.1'
     PrivateData=@{
         PSData=@{

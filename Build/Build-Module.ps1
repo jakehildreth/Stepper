@@ -25,7 +25,7 @@ $CopyrightYear = if ($Calver) { $CalVer.Split('.')[0] } else { (Get-Date -Format
 Build-Module -ModuleName 'Stepper' {
     # Usual defaults as per standard module
     $Manifest = [ordered] @{
-        ModuleVersion        = if ($Calver) { $CalVer } else { (Get-Date -Format yyyy.M.d) }
+        ModuleVersion        = if ($Calver) { $CalVer } else { (Get-Date -Format yyyy.M.d.Hmm -AsUTC) }
         CompatiblePSEditions = @('Desktop', 'Core')
         GUID                 = '703e39b3-f720-48f1-94fc-3cd1ee10ab74'
         Author               = 'Jake Hildreth'
