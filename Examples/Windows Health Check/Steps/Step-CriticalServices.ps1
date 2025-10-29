@@ -5,13 +5,13 @@
 
 .DESCRIPTION
     Checks the status of essential Windows services and reports any that are stopped.
-    This step accepts all results from previous steps via $AllResults parameter.
+    This step receives all results from previous steps via $AllData parameter.
     Returns $true on success, $false on failure.
 #>
 
 param(
     [Parameter(Mandatory = $false)]
-    [hashtable]$AllResults
+    [array]$AllData
 )
 
 Write-Host "`n--- Critical Services Check ---" -ForegroundColor Yellow
