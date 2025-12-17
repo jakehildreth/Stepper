@@ -1,23 +1,21 @@
 ﻿@{
-    AliasesToExport=@()
-    Author='Jake Hildreth'
-    CmdletsToExport=@()
-    CompanyName='CompanyName'
-    CompatiblePSEditions=@('Desktop',        'Core')
-    Copyright='(c) 2025 - 2025. All rights reserved.'
-    Description='A module to help create step-by-step modules that guide users through complex tasks.'
-    FileList=@('Stepper.psm1',        'Stepper.psd1')
-    FunctionsToExport=@('Get-StepperSteps',        'New-StepperConfig',        'New-StepperScript',        'New-StepperStep',        'Reset-StepperState',        'Show-StepperStatus',        'Start-Stepper')
-    GUID='703e39b3-f720-48f1-94fc-3cd1ee10ab74'
-    ModuleVersion='2025.10.29.1138'
-    PowerShellVersion='5.1'
-    PrivateData=@{
-        PSData=@{
-            ExternalModuleDependencies=@('Microsoft.PowerShell.Utility',                'Microsoft.PowerShell.Archive',                'Microsoft.PowerShell.Management',                'Microsoft.PowerShell.Security')
-            LicenseUri='https://opensource.org/licenses/MIT'
-            Tags=@('Windows',                'MacOS',                'Linux')
+    AliasesToExport      = @()
+    Author               = 'Jake Hildreth'
+    CmdletsToExport      = @()
+    CompanyName          = 'Unknown'
+    CompatiblePSEditions = @('Desktop', 'Core')
+    Copyright            = '(c) 2025 Jake Hildreth. All rights reserved.'
+    Description          = 'A PowerShell module for creating resumable scripts that can recover from failures by tracking completed steps.'
+    FunctionsToExport    = @('New-Step', 'Stop-Stepper')
+    GUID                 = '2260142f-ef07-4749-a430-a2062efefbf6'
+    ModuleVersion        = '0.1.0'
+    PowerShellVersion    = '5.1'
+    PrivateData          = @{
+        PSData = @{
+            Tags = @('Resumable', 'State', 'Recovery', 'Steps', 'Automation')
+            LicenseUri = 'https://github.com/jakehildreth/Stepper/blob/main/LICENSE'
+            ProjectUri = 'https://github.com/jakehildreth/Stepper'
         }
     }
-    RequiredModules=@('Microsoft.PowerShell.Utility',        'Microsoft.PowerShell.Archive',        'Microsoft.PowerShell.Management',        'Microsoft.PowerShell.Security')
-    RootModule='Stepper.psm1'
+    RootModule           = 'Stepper.psm1'
 }

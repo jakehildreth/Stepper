@@ -53,7 +53,7 @@ $Assembly = @(
     }
 )
 $FoundErrors = @(
-    foreach ($Import in @($Assembly)) {
+    Foreach ($Import in @($Assembly)) {
         try {
             Write-Verbose -Message $Import.FullName
             Add-Type -Path $Import.Fullname -ErrorAction Stop
@@ -77,10 +77,10 @@ $FoundErrors = @(
         }
     }
     #Dot source the files
-    foreach ($Import in @($Classes + $Enums + $Private + $Public)) {
-        try {
+    Foreach ($Import in @($Classes + $Enums + $Private + $Public)) {
+        Try {
             . $Import.Fullname
-        } catch {
+        } Catch {
             Write-Error -Message "Failed to import functions from $($import.Fullname): $_"
             $true
         }
