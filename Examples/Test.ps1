@@ -1,4 +1,4 @@
-# Import-Module "$PSScriptRoot\..\Stepper.psd1" -Force
+Import-Module "$PSScriptRoot\..\Stepper.psd1" -Force
 
 Write-Host "Starting multi-step process..." -ForegroundColor Cyan
 Write-Host ""

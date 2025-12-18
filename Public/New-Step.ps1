@@ -2,31 +2,31 @@ function New-Step {
     <#
     .SYNOPSIS
         Executes a step in a resumable script.
-    
+
     .DESCRIPTION
         New-Step allows scripts to be resumed from the last successfully completed step.
         On first execution, it checks for an existing state file and offers to resume.
         Each step is automatically tracked by its location (file:line) in the script.
-        
+
         The script content is hashed to detect modifications. If the script changes
         between runs, the state is invalidated and execution starts fresh.
-    
+
     .PARAMETER ScriptBlock
         The code to execute for this step.
-    
+
     .EXAMPLE
         New-Step {
             Write-Host "Downloading files..."
             Start-Sleep -Seconds 2
         }
-        
+
         New-Step {
             Write-Host "Processing data..."
             Start-Sleep -Seconds 2
         }
-        
+
         If the script fails during processing, the next run will skip the download step.
-    
+
     .NOTES
         State files are stored alongside the script with a .stepper extension.
         Call Stop-Stepper at the end of your script to remove the state file upon successful completion.
@@ -36,7 +36,7 @@ function New-Step {
         [Parameter(Mandatory, Position = 0)]
         [scriptblock]$ScriptBlock
     )
-    
+
     # Get step identifier and script info
     $stepId = Get-StepIdentifier
     # Extract script path from identifier (format: "path:line")
@@ -44,7 +44,7 @@ function New-Step {
     $scriptPath = $stepId.Substring(0, $lastColonIndex)
     $currentHash = Get-ScriptHash -ScriptPath $scriptPath
     $statePath = Get-StepperStatePath -ScriptPath $scriptPath
-    
+
     # Initialize module state on first call in this session
     if (-not $script:StepperSessionState) {
         # Verify the script contains Stop-Stepper
@@ -52,21 +52,21 @@ function New-Step {
         if ($scriptContent -notmatch 'Stop-Stepper') {
             Write-Host "Script '$scriptPath' does not call Stop-Stepper." -ForegroundColor Yellow
             $response = Read-Host "Add 'Stop-Stepper' to the end of the script? (Y/N)"
-            
+
             if ($response -eq 'Y' -or $response -eq 'y') {
                 Write-Host "Adding 'Stop-Stepper' to the end of the script..." -ForegroundColor Yellow
-                
+
                 # Add Stop-Stepper to the end of the script
                 $updatedContent = $scriptContent.TrimEnd()
                 if (-not $updatedContent.EndsWith("`n")) {
                     $updatedContent += "`n"
                 }
                 $updatedContent += "`nStop-Stepper`n"
-                
+
                 Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
-                
+
                 Write-Host "Stop-Stepper added. Please run the script again." -ForegroundColor Green
-                
+
                 # Exit this execution - the script will need to be run again
                 throw "Script modified to include Stop-Stepper. Please run the script again."
             }
@@ -74,7 +74,7 @@ function New-Step {
                 Write-Warning "Continuing without Stop-Stepper. State file will not be cleaned up automatically."
             }
         }
-        
+
         $script:StepperSessionState = @{
             Initialized       = $false
             RestoreMode       = $false
@@ -84,13 +84,13 @@ function New-Step {
             StatePath         = $statePath
         }
     }
-    
+
     # First step: Check for existing state and prompt user
     if (-not $script:StepperSessionState.Initialized) {
         $script:StepperSessionState.Initialized = $true
-        
+
         $existingState = Read-StepperState -StatePath $statePath
-        
+
         if ($existingState) {
             # Check if script has been modified
             if ($existingState.ScriptHash -ne $currentHash) {
@@ -98,30 +98,54 @@ function New-Step {
                 Remove-StepperState -StatePath $statePath
             }
             else {
-                # Prompt user to restore or start fresh
+                # Count total steps in the script by finding all New-Step calls
+                $scriptContent = Get-Content -Path $scriptPath -Raw
+                $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $totalSteps = $stepMatches.Count
+
+                # Find all step line numbers to determine which step number we're on
+                $stepLines = @()
+                $lineNumber = 1
+                foreach ($line in (Get-Content -Path $scriptPath)) {
+                    if ($line -match '^\s*New-Step\s+\{') {
+                        $stepLines += "${scriptPath}:${lineNumber}"
+                    }
+                    $lineNumber++
+                }
+
+                # Find the index of the last completed step
                 $lastStep = $existingState.LastCompletedStep
+                $lastStepIndex = $stepLines.IndexOf($lastStep)
+                $nextStepNumber = $lastStepIndex + 2  # +1 for next step, +1 because index is 0-based
+
                 $timestamp = $existingState.Timestamp
                 Write-Host ""
-                Write-Host "Previous run detected (last completed: $lastStep at $timestamp)" -ForegroundColor Cyan
-                $response = Read-Host "Resume from last step? (Y/N)"
-                
-                if ($response -eq 'Y' -or $response -eq 'y') {
-                    Write-Host "Resuming from last completed step..." -ForegroundColor Green
-                    $script:StepperSessionState.RestoreMode = $true
-                    $script:StepperSessionState.TargetStep = $lastStep
-                }
-                else {
-                    Write-Host "Starting fresh..." -ForegroundColor Yellow
+                Write-Host "Previous run detected (completed $($lastStepIndex + 1) of $totalSteps steps at $timestamp)" -ForegroundColor Cyan
+
+                if ($nextStepNumber -le $totalSteps) {
+                    $response = Read-Host "Resume from step $nextStepNumber of ${totalSteps}? (Y/n)"
+
+                    if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
+                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                        $script:StepperSessionState.RestoreMode = $true
+                        $script:StepperSessionState.TargetStep = $lastStep
+                    }
+                    else {
+                        Write-Host "Starting fresh..." -ForegroundColor Yellow
+                        Remove-StepperState -StatePath $statePath
+                    }
+                } else {
+                    Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow
                     Remove-StepperState -StatePath $statePath
                 }
                 Write-Host ""
             }
         }
     }
-    
+
     # Determine if we should execute this step
     $shouldExecute = $true
-    
+
     if ($script:StepperSessionState.RestoreMode) {
         # In restore mode: skip steps until we reach the target
         if ($stepId -eq $script:StepperSessionState.TargetStep) {
@@ -136,14 +160,14 @@ function New-Step {
             $shouldExecute = $false
         }
     }
-    
+
     # Execute the step if needed
     if ($shouldExecute) {
         Write-Verbose "[Stepper] Executing step: $stepId"
-        
+
         try {
             & $ScriptBlock
-            
+
             # Update state file after successful execution
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId
         }
