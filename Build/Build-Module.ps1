@@ -1,4 +1,4 @@
-﻿Build-Module -ModuleName 'Stepper' {
+Build-Module -ModuleName 'Stepper' {
     # Usual defaults as per standard module
     $Manifest = [ordered] @{
         ModuleVersion          = '1.0.0'
@@ -17,9 +17,9 @@
     #New-ConfigurationModule -Type RequiredModule -Name 'PSSharedGoods' -Guid 'Auto' -Version 'Latest'
 
     # Add external module dependencies, using loop for simplicity
-    #foreach ($Module in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Archive', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Security')) {
-    #    New-ConfigurationModule -Type ExternalModule -Name $Module
-    #}
+    foreach ($Module in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Management')) {
+        New-ConfigurationModule -Type ExternalModule -Name $Module
+    }
 
     # Add approved modules, that can be used as a dependency, but only when specific function from those modules is used
     # And on that time only that function and dependant functions will be copied over
@@ -61,12 +61,14 @@
     }
     # format PSD1 and PSM1 files when merging into a single file
     # enable formatting is not required as Configuration is provided
-    New-ConfigurationFormat -ApplyTo 'OnMergePSM1', 'OnMergePSD1' -Sort None @ConfigurationFormat
+    # Disabled OnMergePSD1 formatting due to PSScriptAnalyzer line ending bug
+    New-ConfigurationFormat -ApplyTo 'OnMergePSM1' -Sort None @ConfigurationFormat
     # format PSD1 and PSM1 files within the module
     # enable formatting is required to make sure that formatting is applied (with default settings)
-    New-ConfigurationFormat -ApplyTo 'DefaultPSD1', 'DefaultPSM1' -EnableFormatting -Sort None
+    # Disabled DefaultPSD1 formatting due to PSScriptAnalyzer line ending bug
+    New-ConfigurationFormat -ApplyTo 'DefaultPSM1' -EnableFormatting -Sort None
     # when creating PSD1 use special style without comments and with only required parameters
-    New-ConfigurationFormat -ApplyTo 'DefaultPSD1', 'OnMergePSD1' -PSD1Style 'Minimal'
+    New-ConfigurationFormat -ApplyTo 'OnMergePSD1' -PSD1Style 'Minimal'
 
     # configuration for documentation, at the same time it enables documentation processing
     New-ConfigurationDocumentation -Enable:$false -StartClean -UpdateWhenNew -PathReadme 'Docs\Readme.md' -Path 'Docs'

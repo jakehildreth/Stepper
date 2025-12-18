@@ -41,3 +41,5 @@ function Get-StepIdentifier {
     
     throw "Unable to determine step identifier from call stack"
 }
+
+Stop-Stepper
