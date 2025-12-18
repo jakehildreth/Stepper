@@ -45,6 +45,17 @@ function New-Step {
     $currentHash = Get-ScriptHash -ScriptPath $scriptPath
     $statePath = Get-StepperStatePath -ScriptPath $scriptPath
 
+    # Initialize $Stepper hashtable in calling script scope if it doesn't exist
+    $callingScope = $PSCmdlet.SessionState
+    try {
+        $existingStepper = $callingScope.PSVariable.Get('Stepper')
+        if (-not $existingStepper) {
+            $callingScope.PSVariable.Set('Stepper', @{})
+        }
+    } catch {
+        $callingScope.PSVariable.Set('Stepper', @{})
+    }
+
     # Initialize module state on first call in this session
     if (-not $script:StepperSessionState) {
         # Verify the script contains Stop-Stepper
@@ -90,6 +101,23 @@ function New-Step {
         $script:StepperSessionState.Initialized = $true
 
         $existingState = Read-StepperState -StatePath $statePath
+        
+        # Try to load persisted $Stepper data
+        $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
+        if (Test-Path $stepperDataPath) {
+            try {
+                $persistedStepper = Get-Content $stepperDataPath -Raw | ConvertFrom-Json
+                # Convert JSON object back to hashtable
+                $stepperHash = @{}
+                $persistedStepper.PSObject.Properties | ForEach-Object {
+                    $stepperHash[$_.Name] = $_.Value
+                }
+                $callingScope.PSVariable.Set('Stepper', $stepperHash)
+                Write-Verbose "Loaded persisted \$Stepper data"
+            } catch {
+                Write-Warning "Failed to load persisted \$Stepper data: $_"
+            }
+        }
 
         if ($existingState) {
             # Check if script has been modified
@@ -170,6 +198,18 @@ function New-Step {
 
             # Update state file after successful execution
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId
+            
+            # Save $Stepper hashtable after successful step execution
+            try {
+                $stepperData = $callingScope.PSVariable.Get('Stepper').Value
+                if ($stepperData -and $stepperData.Count -gt 0) {
+                    $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
+                    $stepperData | ConvertTo-Json -Depth 10 | Set-Content $stepperDataPath
+                    Write-Verbose "Saved \$Stepper data ($($stepperData.Count) items)"
+                }
+            } catch {
+                Write-Warning "Failed to save \$Stepper data: $_"
+            }
         }
         catch {
             Write-Error "Step failed at $stepId : $_"

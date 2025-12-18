@@ -44,7 +44,14 @@ function Stop-Stepper {
             Remove-StepperState -StatePath $statePath
             Write-Verbose "Cleared Stepper state for $scriptPath"
             
-            # Also clear the session state
+            # Also remove the persisted $Stepper data file
+            $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
+            if (Test-Path $stepperDataPath) {
+                Remove-Item $stepperDataPath -Force -ErrorAction SilentlyContinue
+                Write-Verbose "Cleared persisted `$Stepper data"
+            }
+            
+            # Clear the session state
             if ($script:StepperSessionState) {
                 $script:StepperSessionState = $null
             }
