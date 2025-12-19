@@ -112,6 +112,38 @@ function New-Step {
     if (-not $script:StepperSessionState.Initialized) {
         $script:StepperSessionState.Initialized = $true
 
+        # Check for non-resumable code between New-Step blocks and before Stop-Stepper
+        $scriptLines = Get-Content -Path $scriptPath
+
+        $blockInfo = Find-NewStepBlocks -ScriptLines $scriptLines
+        $newStepBlocks = $blockInfo.NewStepBlocks
+        $stopStepperLine = $blockInfo.StopStepperLine
+
+        $nonResumableBlocks = Find-NonResumableCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
+
+        # Process each non-resumable block individually
+        if ($nonResumableBlocks.Count -gt 0) {
+            $scriptName = Split-Path $scriptPath -Leaf
+            $allLinesToRemove = @{}
+
+            foreach ($block in $nonResumableBlocks) {
+                $action = Get-NonResumableCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
+
+                if ($action -ne 'Ignore') {
+                    # Mark these lines with the chosen action
+                    foreach ($line in $block.Lines) {
+                        $allLinesToRemove[$line] = @{ Action = $action; Code = $scriptLines[$line] }
+                    }
+                }
+            }
+
+            # Apply all the changes
+            if ($allLinesToRemove.Count -gt 0) {
+                Update-ScriptWithNonResumableActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
+                exit
+            }
+        }
+
         $existingState = Read-StepperState -StatePath $statePath
 
         # Try to load persisted $Stepper data from state

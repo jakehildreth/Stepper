@@ -15,3 +15,9 @@ Sources/packages/*
 Lib/Default/*
 Lib/Standard/*
 Lib/Core/*
+
+# macOS
+.DS_Store
+
+# Stepper state files
+*.stepper
