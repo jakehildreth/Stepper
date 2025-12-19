@@ -61,11 +61,11 @@ function New-Step {
         $existingStepper = $callingScope.PSVariable.Get('Stepper')
         if (-not $existingStepper) {
             $callingScope.PSVariable.Set('Stepper', @{})
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized \$Stepper hashtable"
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
         }
     } catch {
         $callingScope.PSVariable.Set('Stepper', @{})
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized \$Stepper hashtable"
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
     }
 
     # Initialize module state on first call in this session
@@ -115,19 +115,15 @@ function New-Step {
         $existingState = Read-StepperState -StatePath $statePath
 
         # Try to load persisted $Stepper data
-        $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
+        $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.xml"
         if (Test-Path $stepperDataPath) {
             try {
-                $persistedStepper = Get-Content $stepperDataPath -Raw | ConvertFrom-Json
-                # Convert JSON object back to hashtable
-                $stepperHash = @{}
-                $persistedStepper.PSObject.Properties | ForEach-Object {
-                    $stepperHash[$_.Name] = $_.Value
-                }
+                $stepperHash = Import-Clixml -Path $stepperDataPath
                 $callingScope.PSVariable.Set('Stepper', $stepperHash)
-                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded persisted \$Stepper data with $($stepperHash.Count) items"
+                $variableNames = ($stepperHash.Keys | Sort-Object) -join ', '
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk ($variableNames)"
             } catch {
-                Write-Warning "Failed to load persisted \$Stepper data: $_"
+                Write-Warning "Failed to load persisted `$Stepper data: $_"
             }
         }
 
@@ -203,25 +199,57 @@ function New-Step {
 
     # Execute the step if needed
     if ($shouldExecute) {
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step: $stepId"
+        # Format step identifier for display (scriptname:line instead of full path)
+        $stepIdParts = $stepId -split ':'
+        $scriptName = Split-Path $stepIdParts[0] -Leaf
+        $displayStepId = "${scriptName}:$($stepIdParts[1])"
+
+        # Calculate step number (X/Y)
+        $scriptContent = Get-Content -Path $scriptPath -Raw
+        $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $totalSteps = $stepMatches.Count
+
+        # Find all step line numbers
+        $stepLines = @()
+        $lineNumber = 1
+        foreach ($line in (Get-Content -Path $scriptPath)) {
+            if ($line -match '^\s*New-Step\s+\{') {
+                $stepLines += "${scriptPath}:${lineNumber}"
+            }
+            $lineNumber++
+        }
+        $currentStepNumber = $stepLines.IndexOf($stepId) + 1
+
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step $currentStepNumber/$totalSteps ($displayStepId)"
+
+        # Show current $Stepper data
+        try {
+            $stepperData = $callingScope.PSVariable.Get('Stepper').Value
+            if ($stepperData -and $stepperData.Count -gt 0) {
+                $variableNames = ($stepperData.Keys | Sort-Object) -join ', '
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Available `$Stepper data ($variableNames)"
+            }
+        } catch {
+            # Ignore if unable to read $Stepper
+        }
 
         try {
             & $ScriptBlock
 
             # Update state file after successful execution
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step completed: $stepId"
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
 
             # Save $Stepper hashtable after successful step execution
             try {
                 $stepperData = $callingScope.PSVariable.Get('Stepper').Value
                 if ($stepperData -and $stepperData.Count -gt 0) {
-                    $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
-                    $stepperData | ConvertTo-Json -Depth 10 | Set-Content $stepperDataPath
-                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved \$Stepper data ($($stepperData.Count) items)"
+                    $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.xml"
+                    Export-Clixml -Path $stepperDataPath -InputObject $stepperData
+                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
                 }
             } catch {
-                Write-Warning "Failed to save \$Stepper data: $_"
+                Write-Warning "Failed to save `$Stepper data: $_"
             }
         }
         catch {

@@ -54,10 +54,11 @@ function Stop-Stepper {
             # Found the user's script
             $statePath = Get-StepperStatePath -ScriptPath $scriptPath
             Remove-StepperState -StatePath $statePath
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptPath"
+            $scriptName = Split-Path $scriptPath -Leaf
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptName"
 
             # Also remove the persisted $Stepper data file
-            $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
+            $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.xml"
             if (Test-Path $stepperDataPath) {
                 Remove-Item $stepperDataPath -Force -ErrorAction SilentlyContinue
                 Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared persisted `$Stepper data"

@@ -4,15 +4,16 @@ param()
 Import-Module "$PSScriptRoot\..\Stepper.psd1" -Force
 
 New-Step {
-    $Stepper.Test = Get-Process
+    $Stepper.AllProcesses = Get-Process
+    $Stepper.ChildItems = Get-ChildItem
 }
 
 New-Step {
-    $Stepper.Test
+    $Stepper.AllProcesses | Select-Object -Last 3
 }
 
 New-Step {
-    $Stepper.Test | Select-Object -Last 3
+    $Stepper.ChildItems| Select-Object -Last 3
 }
 
 Stop-Stepper
