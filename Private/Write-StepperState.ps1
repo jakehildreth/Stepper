@@ -37,8 +37,7 @@ function Write-StepperState {
     }
     
     try {
-        $json = ConvertTo-Json -InputObject $state -Depth 10
-        Set-Content -Path $StatePath -Value $json -ErrorAction Stop
+        Export-Clixml -Path $StatePath -InputObject $state -ErrorAction Stop
     }
     catch {
         Write-Warning "Failed to write state file '$StatePath': $_"

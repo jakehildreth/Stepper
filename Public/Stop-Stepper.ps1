@@ -22,7 +22,7 @@ function Stop-Stepper {
     # Inherit verbose preference by walking the call stack
     $callStack = Get-PSCallStack
     foreach ($frame in $callStack) {
-        if ($frame.InvocationInfo.BoundParameters.ContainsKey('Verbose') -and 
+        if ($frame.InvocationInfo.BoundParameters.ContainsKey('Verbose') -and
             $frame.InvocationInfo.BoundParameters['Verbose']) {
             $VerbosePreference = 'Continue'
             break

@@ -24,8 +24,7 @@ function Read-StepperState {
     }
     
     try {
-        $json = Get-Content -Path $StatePath -Raw -ErrorAction Stop
-        ConvertFrom-Json -InputObject $json -ErrorAction Stop
+        Import-Clixml -Path $StatePath -ErrorAction Stop
     }
     catch {
         Write-Warning "Failed to read state file '$StatePath': $_"
