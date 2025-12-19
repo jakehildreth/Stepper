@@ -37,6 +37,16 @@ function New-Step {
         [scriptblock]$ScriptBlock
     )
 
+    # Inherit verbose preference by walking the call stack
+    $callStack = Get-PSCallStack
+    foreach ($frame in $callStack) {
+        if ($frame.InvocationInfo.BoundParameters.ContainsKey('Verbose') -and 
+            $frame.InvocationInfo.BoundParameters['Verbose']) {
+            $VerbosePreference = 'Continue'
+            break
+        }
+    }
+
     # Get step identifier and script info
     $stepId = Get-StepIdentifier
     # Extract script path from identifier (format: "path:line")
@@ -51,9 +61,11 @@ function New-Step {
         $existingStepper = $callingScope.PSVariable.Get('Stepper')
         if (-not $existingStepper) {
             $callingScope.PSVariable.Set('Stepper', @{})
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized \$Stepper hashtable"
         }
     } catch {
         $callingScope.PSVariable.Set('Stepper', @{})
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized \$Stepper hashtable"
     }
 
     # Initialize module state on first call in this session
@@ -101,7 +113,7 @@ function New-Step {
         $script:StepperSessionState.Initialized = $true
 
         $existingState = Read-StepperState -StatePath $statePath
-        
+
         # Try to load persisted $Stepper data
         $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
         if (Test-Path $stepperDataPath) {
@@ -113,7 +125,7 @@ function New-Step {
                     $stepperHash[$_.Name] = $_.Value
                 }
                 $callingScope.PSVariable.Set('Stepper', $stepperHash)
-                Write-Verbose "Loaded persisted \$Stepper data"
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded persisted \$Stepper data with $($stepperHash.Count) items"
             } catch {
                 Write-Warning "Failed to load persisted \$Stepper data: $_"
             }
@@ -191,21 +203,22 @@ function New-Step {
 
     # Execute the step if needed
     if ($shouldExecute) {
-        Write-Verbose "[Stepper] Executing step: $stepId"
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step: $stepId"
 
         try {
             & $ScriptBlock
 
             # Update state file after successful execution
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId
-            
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step completed: $stepId"
+
             # Save $Stepper hashtable after successful step execution
             try {
                 $stepperData = $callingScope.PSVariable.Get('Stepper').Value
                 if ($stepperData -and $stepperData.Count -gt 0) {
                     $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.json"
                     $stepperData | ConvertTo-Json -Depth 10 | Set-Content $stepperDataPath
-                    Write-Verbose "Saved \$Stepper data ($($stepperData.Count) items)"
+                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved \$Stepper data ($($stepperData.Count) items)"
                 }
             } catch {
                 Write-Warning "Failed to save \$Stepper data: $_"
