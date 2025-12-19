@@ -1,13 +1,38 @@
+param (
+    # A CalVer string if you need to manually override the default yyyy.M.d version string.
+    [string]$CalVer,
+    [switch]$PublishToPSGallery,
+    [string]$PSGalleryAPIPath
+)
+
+if (Get-Module -Name 'PSPublishModule' -ListAvailable) {
+    Write-Verbose 'PSPublishModule is installed.'
+} else {
+    Write-Verbose 'PSPublishModule is not installed. Attempting installation.'
+    try {
+        Install-Module -Name Pester -AllowClobber -Scope CurrentUser -SkipPublisherCheck -Force
+        Install-Module -Name PSScriptAnalyzer -AllowClobber -Scope CurrentUser -Force
+        Install-Module -Name PSPublishModule -AllowClobber -Scope CurrentUser -Force
+    } catch {
+        Write-Error "PSPublishModule installation failed. $_"
+    }
+}
+
+Update-Module -Name PSPublishModule
+Import-Module -Name PSPublishModule -Force
+
+$CopyrightYear = if ($Calver) { $CalVer.Split('.')[0] } else { (Get-Date -Format yyyy) }
+
 Build-Module -ModuleName 'Stepper' {
     # Usual defaults as per standard module
     $Manifest = [ordered] @{
-        ModuleVersion          = '1.0.0'
+        ModuleVersion          = if ($Calver) { $CalVer } else { (Get-Date -Format yyyy.M.d.Hmm) }
         CompatiblePSEditions   = @('Desktop', 'Core')
         GUID                   = '2260142f-ef07-4749-a430-a2062efefbf6'
-        Author                 = 'Author'
-        CompanyName            = 'CompanyName'
-        Copyright              = "(c) 2011 - $((Get-Date).Year) Author @ CompanyName. All rights reserved."
-        Description            = 'Simple project Stepper'
+        Author                 = 'Jake Hildreth'
+        CompanyName            = 'Gilmour Technologies Ltd'
+        Copyright              = "(c) 2025 - $CopyrightYear Author @ Gilmour Technologies Ltd. All rights reserved."
+        Description            = 'A PowerShell module for creating resumable, step-by-step automation scripts with automatic state persistence and cross-platform support.'
         PowerShellVersion      = '5.1'
         Tags                   = @('Windows', 'MacOS', 'Linux')
     }
@@ -81,6 +106,8 @@ Build-Module -ModuleName 'Stepper' {
     #New-ConfigurationArtefact -Type Packed -Enable -Path "$PSScriptRoot\..\Artefacts\Packed" -IncludeTagName
 
     # global options for publishing to github/psgallery
-    #New-ConfigurationPublish -Type PowerShellGallery -FilePath 'C:\Support\Important\PowerShellGalleryAPI.txt' -Enabled:$false
-    #New-ConfigurationPublish -Type GitHub -FilePath 'C:\Support\Important\GitHubAPI.txt' -UserName 'CompanyName' -Enabled:$false
+    # global options for publishing to github/psgallery
+    if($PublishToPSGallery) {
+        New-ConfigurationPublish -Type PowerShellGallery -FilePath $PSGalleryAPIPath -Enabled:$true
+    }
 }

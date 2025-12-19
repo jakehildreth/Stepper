@@ -29,11 +29,8 @@ function Get-StepIdentifier {
         # Skip frames from the Stepper module directory
         $stepperDir = Split-Path -Path $PSScriptRoot -Parent
         if ($scriptName -like "$stepperDir/Private/*" -or
-            $scriptName -like "$stepperDir\Private\*" -or
             $scriptName -like "$stepperDir/Public/*" -or
-            $scriptName -like "$stepperDir\Public\*" -or
-            $scriptName -like "$stepperDir/Stepper.psm1" -or
-            $scriptName -like "$stepperDir\Stepper.psm1") {
+            $scriptName -like "$stepperDir/Stepper.psm1") {
             continue
         }
 

@@ -1,18 +1,19 @@
 ﻿@{
     AliasesToExport=@()
-    Author='Author'
+    Author='Jake Hildreth'
     CmdletsToExport=@()
-    CompanyName='CompanyName'
+    CompanyName='Gilmour Technologies Ltd'
     CompatiblePSEditions=@('Desktop',        'Core')
-    Copyright='(c) 2011 - 2025 Author @ CompanyName. All rights reserved.'
-    Description='Simple project Stepper'
+    Copyright='(c) 2025 - 2025 Author @ Gilmour Technologies Ltd. All rights reserved.'
+    Description='A PowerShell module for creating resumable, step-by-step automation scripts with automatic state persistence and cross-platform support.'
     FunctionsToExport=@('New-Step',        'Stop-Stepper')
     GUID='2260142f-ef07-4749-a430-a2062efefbf6'
-    ModuleVersion='1.0.0'
+    ModuleVersion='2025.12.19.720'
     PowerShellVersion='5.1'
     PrivateData=@{
         PSData=@{
             ExternalModuleDependencies=@('Microsoft.PowerShell.Utility',                'Microsoft.PowerShell.Management')
+            RequireLicenseAcceptance=$false
             Tags=@('Windows',                'MacOS',                'Linux')
         }
     }

@@ -46,8 +46,8 @@ function Stop-Stepper {
 
             # Skip frames from within the Stepper module
             if ($scriptPath -like '*Stepper.psm1' -or
-                $scriptPath -like '*\Private\*.ps1' -or
-                $scriptPath -like '*\Public\*.ps1') {
+                $scriptPath -like '*/Private/*.ps1' -or
+                $scriptPath -like '*/Public/*.ps1') {
                 continue
             }
 
