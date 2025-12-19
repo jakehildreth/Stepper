@@ -45,9 +45,12 @@ function Stop-Stepper {
             }
 
             # Skip frames from within the Stepper module
-            if ($scriptPath -like '*Stepper.psm1' -or
-                $scriptPath -like '*/Private/*.ps1' -or
-                $scriptPath -like '*/Public/*.ps1') {
+            # Normalize path for cross-platform comparison
+            $normalizedPath = $scriptPath -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            if ($normalizedPath -like '*Stepper.psm1' -or
+                $normalizedPath -like "*${sep}Private${sep}*.ps1" -or
+                $normalizedPath -like "*${sep}Public${sep}*.ps1") {
                 continue
             }
 
