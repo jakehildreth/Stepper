@@ -114,13 +114,11 @@ function New-Step {
 
         $existingState = Read-StepperState -StatePath $statePath
 
-        # Try to load persisted $Stepper data
-        $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.xml"
-        if (Test-Path $stepperDataPath) {
+        # Try to load persisted $Stepper data from state
+        if ($existingState -and $existingState.StepperData) {
             try {
-                $stepperHash = Import-Clixml -Path $stepperDataPath
-                $callingScope.PSVariable.Set('Stepper', $stepperHash)
-                $variableNames = ($stepperHash.Keys | Sort-Object) -join ', '
+                $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                $variableNames = ($existingState.StepperData.Keys | Sort-Object) -join ', '
                 Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk ($variableNames)"
             } catch {
                 Write-Warning "Failed to load persisted `$Stepper data: $_"
@@ -154,12 +152,31 @@ function New-Step {
                 $lastStepIndex = $stepLines.IndexOf($lastStep)
                 $nextStepNumber = $lastStepIndex + 2  # +1 for next step, +1 because index is 0-based
 
-                $timestamp = $existingState.Timestamp
+                $timestamp = [DateTime]::Parse($existingState.Timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+
+                # Get available variable names from StepperData
+                $availableVars = if ($existingState.StepperData -and $existingState.StepperData.Count -gt 0) {
+                    ($existingState.StepperData.Keys | Sort-Object) -join ', '
+                } else {
+                    'None'
+                }
+
                 Write-Host ""
-                Write-Host "Previous run detected (completed $($lastStepIndex + 1) of $totalSteps steps at $timestamp)" -ForegroundColor Cyan
+                Write-Host "Incomplete script run detected!" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "Total Steps:      $totalSteps" -ForegroundColor Cyan
+                Write-Host "Steps Completed:  $($lastStepIndex + 1)" -ForegroundColor Cyan
+                Write-Host "Variables:        $availableVars" -ForegroundColor Cyan
+                Write-Host "Last Activity:    $timestamp" -ForegroundColor Cyan
+                Write-Host ""
 
                 if ($nextStepNumber -le $totalSteps) {
-                    $response = Read-Host "Resume from step $nextStepNumber of ${totalSteps}? (Y/n)"
+                    # Get the script name and next step line number
+                    $scriptName = Split-Path $scriptPath -Leaf
+                    $nextStepId = $stepLines[$lastStepIndex + 1]
+                    $nextStepLine = ($nextStepId -split ':')[-1]
+
+                    $response = Read-Host "Resume $scriptName from Line ${nextStepLine}? (Y/n)"
 
                     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
                         Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
@@ -183,16 +200,20 @@ function New-Step {
     $shouldExecute = $true
 
     if ($script:StepperSessionState.RestoreMode) {
+        # Format step identifier for display messages
+        $stepIdParts = $stepId -split ':'
+        $scriptName = Split-Path $stepIdParts[0] -Leaf
+        $displayStepId = "${scriptName}:$($stepIdParts[1])"
+
         # In restore mode: skip steps until we reach the target
         if ($stepId -eq $script:StepperSessionState.TargetStep) {
             # This is the last completed step, skip it and disable restore mode
-            Write-Host "[Stepper] Skipping step (already completed): $stepId" -ForegroundColor DarkGray
             $script:StepperSessionState.RestoreMode = $false
             $shouldExecute = $false
         }
         elseif ($script:StepperSessionState.RestoreMode) {
             # Still skipping
-            Write-Host "[Stepper] Skipping step: $stepId" -ForegroundColor DarkGray
+            Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Skipping step: $displayStepId" -ForegroundColor DarkGray
             $shouldExecute = $false
         }
     }
@@ -236,20 +257,13 @@ function New-Step {
         try {
             & $ScriptBlock
 
-            # Update state file after successful execution
-            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId
+            # Update state file after successful execution (including $Stepper data)
+            $stepperData = $callingScope.PSVariable.Get('Stepper').Value
+            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
 
-            # Save $Stepper hashtable after successful step execution
-            try {
-                $stepperData = $callingScope.PSVariable.Get('Stepper').Value
-                if ($stepperData -and $stepperData.Count -gt 0) {
-                    $stepperDataPath = Join-Path -Path (Split-Path $statePath -Parent) -ChildPath "stepper-data.xml"
-                    Export-Clixml -Path $stepperDataPath -InputObject $stepperData
-                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
-                }
-            } catch {
-                Write-Warning "Failed to save `$Stepper data: $_"
+            if ($stepperData -and $stepperData.Count -gt 0) {
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
             }
         }
         catch {
