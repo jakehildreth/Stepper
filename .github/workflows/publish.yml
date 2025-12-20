@@ -9,6 +9,7 @@ on:
       - 'Build/**'
       - 'Stepper.psm1'
       - 'Stepper.psd1'
+      - 'LICENSE'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
