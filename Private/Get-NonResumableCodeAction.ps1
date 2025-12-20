@@ -34,7 +34,9 @@ function Get-NonResumableCodeAction {
 
     Write-Host ""
     Write-Host "[!] Non-resumable code detected in ${ScriptName}." -ForegroundColor Magenta
-    Write-Host "    This code will execute on every run of this script, including resumed runs:" -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "    This code will execute on every run of this script," -ForegroundColor Magenta
+    Write-Host "    including resumed runs:" -ForegroundColor Magenta
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
         Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray

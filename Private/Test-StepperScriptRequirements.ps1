@@ -29,6 +29,7 @@ function Test-StepperScriptRequirements {
     if ($needsChanges) {
         Write-Host ""
         Write-Host "[!] Script requirements check for ${scriptName}:" -ForegroundColor Magenta
+        Write-Host ""
 
         if (-not $hasCmdletBinding) {
             Write-Host "  Missing [CmdletBinding()] declaration" -ForegroundColor Gray
