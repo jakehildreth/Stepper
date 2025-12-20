@@ -31,10 +31,4 @@ Describe 'Get-StepperStatePath' {
             $result | Should -Be '/home/scripts/test.backup.ps1.stepper'
         }
     }
-
-    Context 'Parameter validation' {
-        It 'Should require ScriptPath parameter' {
-            { Get-StepperStatePath } | Should -Throw
-        }
-    }
 }

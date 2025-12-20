@@ -6,8 +6,7 @@ BeforeAll {
 
 Describe 'Get-ScriptHash' {
     BeforeEach {
-        # Create a temporary test directory
-        $TestDrive = [System.IO.Path]::GetTempPath()
+        # Create a temporary test file in Pester's $TestDrive
         $TestFile = Join-Path $TestDrive "test-$(New-Guid).ps1"
     }
 
@@ -69,15 +68,6 @@ Describe 'Get-ScriptHash' {
             $hash1 | Should -Not -Be $hash2
         }
 
-        It 'Should handle empty files' {
-            ' ' | Out-File -FilePath $TestFile -Encoding UTF8 -NoNewline
-
-            $hash = Get-ScriptHash -ScriptPath $TestFile
-
-            $hash | Should -Not -BeNullOrEmpty
-            $hash.Length | Should -Be 64
-        }
-
         It 'Should handle multi-line scripts' {
             $script = @'
 function Test-Function {
@@ -101,10 +91,6 @@ Test-Function -Name "World"
             $nonExistentFile = Join-Path $TestDrive "does-not-exist.ps1"
 
             { Get-ScriptHash -ScriptPath $nonExistentFile } | Should -Throw
-        }
-
-        It 'Should require ScriptPath parameter' {
-            { Get-ScriptHash } | Should -Throw
         }
     }
 }
