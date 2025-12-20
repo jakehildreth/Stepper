@@ -29,12 +29,14 @@ jobs:
         Install-Module -Name PSPublishModule -AllowClobber -Scope CurrentUser -Force
         Write-Host "Modules installed successfully" -ForegroundColor Green
 
-    - name: Build module
+    - name: Build and Publish to PowerShell Gallery
       shell: pwsh
+      env:
+        PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
       run: |
-        Write-Host "Building Stepper module..." -ForegroundColor Cyan
-        ./Build/Build-Module.ps1
-        Write-Host "Build completed" -ForegroundColor Green
+        Write-Host "Building and publishing Stepper module..." -ForegroundColor Cyan
+        ./Build/Build-Module.ps1 -PublishToPSGallery -PSGalleryAPIKey $env:PSGALLERY_API_KEY
+        Write-Host "Published successfully" -ForegroundColor Green
 
     - name: Get module version
       id: version
@@ -44,12 +46,3 @@ jobs:
         $version = $manifest.ModuleVersion
         echo "version=$version" >> $env:GITHUB_OUTPUT
         Write-Host "Module version: $version" -ForegroundColor Green
-
-    - name: Publish to PowerShell Gallery
-      shell: pwsh
-      env:
-        PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
-      run: |
-        Write-Host "Publishing to PowerShell Gallery..." -ForegroundColor Cyan
-        ./Build/Build-Module.ps1 -PublishToPSGallery -PSGalleryAPIKey $env:PSGALLERY_API_KEY
-        Write-Host "Published successfully" -ForegroundColor Green
