@@ -13,7 +13,7 @@ function Get-NonResumableCodeAction {
         Code block with Lines and IsBeforeStop properties.
 
     .OUTPUTS
-        String with chosen action: 'Wrap', 'Delete', or 'Ignore'.
+        String with chosen action: 'Wrap', 'MarkIgnored', 'Delete', or 'Ignore'.
     #>
     [CmdletBinding()]
     param(
@@ -46,6 +46,7 @@ function Get-NonResumableCodeAction {
 
     Write-Host "How would you like to handle this?" -ForegroundColor Cyan
     Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
+    Write-Host "  [M] Mark as expected (add #region Stepper ignore)" -ForegroundColor White
     if ($hasStepperVar) {
         Write-Host "  [D] Delete this code (WARNING: This will delete code that uses `$Stepper variables)" -ForegroundColor White
     } else {
@@ -57,12 +58,13 @@ function Get-NonResumableCodeAction {
 
     Write-Host "Choice? [" -NoNewline
     Write-Host "W" -NoNewline -ForegroundColor Cyan
-    Write-Host "/d/i/q]: " -NoNewline
+    Write-Host "/m/d/i/q]: " -NoNewline
     $choice = Read-Host
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }
         '' { return 'Wrap' }  # Default to Wrap
+        'm' { return 'MarkIgnored' }
         'd' { return 'Delete' }
         'i' { return 'Ignore' }
         'q' { return 'Quit' }

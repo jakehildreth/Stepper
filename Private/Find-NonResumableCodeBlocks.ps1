@@ -31,15 +31,39 @@ function Find-NonResumableCodeBlocks {
 
     $nonResumableBlocks = @()
 
+    # Find all Stepper ignore regions
+    $ignoredRegions = @()
+    $inIgnoreRegion = $false
+    $regionStart = -1
+    for ($i = 0; $i -lt $ScriptLines.Count; $i++) {
+        $line = $ScriptLines[$i].Trim()
+        if ($line -match '^\s*#region\s+Stepper\s+ignore') {
+            $inIgnoreRegion = $true
+            $regionStart = $i
+        }
+        elseif ($line -match '^\s*#endregion\s+Stepper\s+ignore' -and $inIgnoreRegion) {
+            $ignoredRegions += @{
+                Start = $regionStart
+                End = $i
+            }
+            $inIgnoreRegion = $false
+        }
+    }
+
     if ($NewStepBlocks.Count -gt 0) {
         # Check code BEFORE the first New-Step block
         $firstBlock = $NewStepBlocks[0]
         $blockLines = @()
         for ($j = 0; $j -lt $firstBlock.Start; $j++) {
+            # Skip if line is in an ignored region
+            if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
+                continue
+            }
+
             $line = $ScriptLines[$j].Trim()
             # Skip comments, empty lines, and common non-executable statements
-            if ($line -and 
-                $line -notmatch '^\s*#' -and 
+            if ($line -and
+                $line -notmatch '^\s*#' -and
                 $line -notmatch '^\s*<#' -and
                 $line -notmatch '^\s*#>' -and
                 $line -notmatch '^\s*\.SYNOPSIS' -and
@@ -70,6 +94,11 @@ function Find-NonResumableCodeBlocks {
 
             $blockLines = @()
             for ($j = $gapStart; $j -le $gapEnd; $j++) {
+                # Skip if line is in an ignored region
+                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
+                    continue
+                }
+
                 $line = $ScriptLines[$j].Trim()
                 if ($line -and $line -notmatch '^\s*#') {
                     $blockLines += $j
@@ -92,6 +121,11 @@ function Find-NonResumableCodeBlocks {
 
             $blockLines = @()
             for ($j = $gapStart; $j -le $gapEnd; $j++) {
+                # Skip if line is in an ignored region
+                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
+                    continue
+                }
+
                 $line = $ScriptLines[$j].Trim()
                 if ($line -and $line -notmatch '^\s*#') {
                     $blockLines += $j
