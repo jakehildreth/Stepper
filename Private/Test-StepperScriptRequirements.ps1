@@ -21,8 +21,8 @@ function Test-StepperScriptRequirements {
     # Check for CmdletBinding
     $hasCmdletBinding = $scriptLines | Where-Object { $_ -match '^\s*\[CmdletBinding\(\)\]' }
 
-    # Check for #requires statement
-    $hasRequires = $scriptLines | Where-Object { $_ -match '^\s*#requires\s+-Modules?\s+Stepper' }
+    # Check for #requires statement (case-insensitive)
+    $hasRequires = $scriptLines | Where-Object { $_ -match '(?i)^\s*#requires\s+-Modules?\s+Stepper' }
 
     $needsChanges = -not $hasCmdletBinding -or -not $hasRequires
 
