@@ -18,7 +18,7 @@ function Get-ScriptHash {
         [Parameter(Mandatory)]
         [string]$ScriptPath
     )
-    
+    throw 'intentional failure'
     try {
         $content = Get-Content -Path $ScriptPath -Raw -ErrorAction Stop
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($content)
