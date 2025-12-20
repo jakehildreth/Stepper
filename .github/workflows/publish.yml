@@ -1,0 +1,68 @@
+name: Build and Publish to PSGallery
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Public/**'
+      - 'Private/**'
+      - 'Build/**'
+      - 'Stepper.psm1'
+      - 'Stepper.psd1'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install required PowerShell modules
+      shell: pwsh
+      run: |
+        Write-Host "Installing required modules..." -ForegroundColor Cyan
+        Install-Module -Name Pester -AllowClobber -Scope CurrentUser -SkipPublisherCheck -Force
+        Install-Module -Name PSScriptAnalyzer -AllowClobber -Scope CurrentUser -Force
+        Install-Module -Name PSPublishModule -AllowClobber -Scope CurrentUser -Force
+        Write-Host "Modules installed successfully" -ForegroundColor Green
+        
+    - name: Build module
+      shell: pwsh
+      run: |
+        Write-Host "Building Stepper module..." -ForegroundColor Cyan
+        ./Build/Build-Module.ps1
+        Write-Host "Build completed" -ForegroundColor Green
+        
+    - name: Get module version
+      id: version
+      shell: pwsh
+      run: |
+        $manifest = Import-PowerShellDataFile ./Stepper.psd1
+        $version = $manifest.ModuleVersion
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        Write-Host "Module version: $version" -ForegroundColor Green
+        
+    - name: Publish to PowerShell Gallery
+      shell: pwsh
+      env:
+        PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+      run: |
+        Write-Host "Publishing to PowerShell Gallery..." -ForegroundColor Cyan
+        ./Build/Build-Module.ps1 -PublishToPSGallery -PSGalleryAPIKey $env:PSGALLERY_API_KEY
+        Write-Host "Published successfully" -ForegroundColor Green
+        
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.version.outputs.version }}
+        release_name: Release ${{ steps.version.outputs.version }}
+        body: |
+          Automated release for version ${{ steps.version.outputs.version }}
+          
+          Published to PowerShell Gallery: https://www.powershellgallery.com/packages/Stepper/${{ steps.version.outputs.version }}
+        draft: false
+        prerelease: false
