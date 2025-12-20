@@ -28,19 +28,33 @@ function Test-StepperScriptRequirements {
 
     if ($needsChanges) {
         Write-Host ""
-        Write-Host "Script requirements check:" -ForegroundColor Cyan
+        Write-Warning "Script requirements check for ${scriptName}:"
 
         if (-not $hasCmdletBinding) {
-            Write-Host "  Missing [CmdletBinding()] declaration" -ForegroundColor Yellow
+            Write-Host "  Missing [CmdletBinding()] declaration" -ForegroundColor Gray
         }
 
         if (-not $hasRequires) {
-            Write-Host "  Missing #requires -Modules Stepper statement" -ForegroundColor Yellow
+            Write-Host "  Missing #requires -Modules Stepper statement" -ForegroundColor Gray
         }
 
         Write-Host ""
-        $response = Read-Host "Add missing declarations? [Y/n]"
+        Write-Host "How would you like to handle this?" -ForegroundColor Cyan
+        Write-Host "  [Y] Add missing declarations (Default)" -ForegroundColor Cyan
+        Write-Host "  [N] Skip" -ForegroundColor White
+        Write-Host "  [Q] Quit" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice [" -NoNewline
+        Write-Host "Y" -NoNewline -ForegroundColor Cyan
+        Write-Host "/n/q]: " -NoNewline
+        $response = Read-Host
 
+        if ($response -eq 'Q' -or $response -eq 'q') {
+            Write-Host ""
+            Write-Host "Exiting..." -ForegroundColor Yellow
+            exit
+        }
+        
         if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
             $newScriptLines = @()
             $addedDeclarations = $false
