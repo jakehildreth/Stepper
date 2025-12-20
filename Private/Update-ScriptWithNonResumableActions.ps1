@@ -10,7 +10,7 @@ function Update-ScriptWithNonResumableActions {
         Array of script lines.
 
     .PARAMETER Actions
-        Hashtable mapping line indices to actions (Wrap/Move/Delete).
+        Hashtable mapping line indices to actions (Wrap/MarkIgnored/Delete).
 
     .PARAMETER NewStepBlocks
         Array of New-Step block definitions.
@@ -52,6 +52,22 @@ function Update-ScriptWithNonResumableActions {
         $wrapGroups += ,@($currentGroup)
     }
 
+    # Group lines to mark as ignored by consecutive sequences
+    $linesToMarkIgnored = @($Actions.Keys | Where-Object { $Actions[$_].Action -eq 'MarkIgnored' } | Sort-Object)
+    $markIgnoredGroups = @()
+    if ($linesToMarkIgnored.Count -gt 0) {
+        $currentGroup = @($linesToMarkIgnored[0])
+        for ($i = 1; $i -lt $linesToMarkIgnored.Count; $i++) {
+            if ($linesToMarkIgnored[$i] -eq $linesToMarkIgnored[$i - 1] + 1) {
+                $currentGroup += $linesToMarkIgnored[$i]
+            } else {
+                $markIgnoredGroups += ,@($currentGroup)
+                $currentGroup = @($linesToMarkIgnored[$i])
+            }
+        }
+        $markIgnoredGroups += ,@($currentGroup)
+    }
+
     # Separate lines to move
     foreach ($lineIdx in $Actions.Keys) {
         if ($Actions[$lineIdx].Action -eq 'Move') {
@@ -64,6 +80,13 @@ function Update-ScriptWithNonResumableActions {
     foreach ($group in $wrapGroups) {
         foreach ($idx in $group) {
             $wrappedLines[$idx] = $true
+        }
+    }
+
+    $markedIgnoredLines = @{}
+    foreach ($group in $markIgnoredGroups) {
+        foreach ($idx in $group) {
+            $markedIgnoredLines[$idx] = $true
         }
     }
 
@@ -91,8 +114,32 @@ function Update-ScriptWithNonResumableActions {
             continue
         }
 
-        # Skip lines that are wrapped (but not the start of a group) or moved or deleted
-        if ($wrappedLines.ContainsKey($i) -or 
+        # Check if this line starts a mark ignored group
+        $startsMarkIgnoredGroup = $false
+        $markIgnoredGroup = $null
+        foreach ($group in $markIgnoredGroups) {
+            if ($group[0] -eq $i) {
+                $startsMarkIgnoredGroup = $true
+                $markIgnoredGroup = $group
+                break
+            }
+        }
+
+        if ($startsMarkIgnoredGroup) {
+            # Add region start
+            $newScriptLines += "#region Stepper ignore"
+            foreach ($idx in $markIgnoredGroup) {
+                $newScriptLines += $ScriptLines[$idx]
+            }
+            $newScriptLines += "#endregion Stepper ignore"
+            # Skip to after this group
+            $i = $markIgnoredGroup[-1]
+            continue
+        }
+
+        # Skip lines that are wrapped/marked/moved/deleted (but not the start of a group)
+        if ($wrappedLines.ContainsKey($i) -or
+            $markedIgnoredLines.ContainsKey($i) -or
             ($Actions.ContainsKey($i) -and $Actions[$i].Action -in @('Move', 'Delete'))) {
             continue
         }

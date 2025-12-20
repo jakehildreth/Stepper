@@ -1,22 +1,22 @@
-
-Write-Host 'Non-resumable code before first step.'
-New-Step {
-    $Stepper.AllProcesses = Get-Process
-    $Stepper.ChildItems = Get-ChildItem
-}
-
-Write-Host 'Non-resumable code between steps 1 and 2.'
+Write-Host 'Non-resumable code before the first step.'
 
 New-Step {
-    $Stepper.AllProcesses | Select-Object -Last 3
+    $Stepper.ProcessCount = (Get-Process).Count
+    $Stepper.ItemCount = (Get-ChildItem).Count
 }
 
-Write-Host 'Non-resumable code between steps 2 and 3.'
+Write-Host "Running process count: $($Stepper.ProcessCount)"
 
 New-Step {
-    $Stepper.ChildItems| Select-Object -Last 3
+    $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
+    if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
+        Write-Host "Simulating crash..." -ForegroundColor Red
+        exit
+    }
+    Write-Host "Items in current folder count: $($Stepper.ItemCount)"
 }
 
-Write-Host $Stepper.ChildItems[0]
+Write-Host 'Non-resumable code between last step and Stop-Stepper'
+$Stepper.ChildItems | Select-Object -Last 3
 
 Stop-Stepper

@@ -8,7 +8,7 @@
     Description='A PowerShell module for creating resumable, step-by-step automation scripts with automatic state persistence and cross-platform support.'
     FunctionsToExport=@('New-Step',        'Stop-Stepper')
     GUID='2260142f-ef07-4749-a430-a2062efefbf6'
-    ModuleVersion='2025.12.19.2040'
+    ModuleVersion='2025.12.20.1145'
     PowerShellVersion='5.1'
     PrivateData=@{
         PSData=@{

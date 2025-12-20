@@ -31,10 +31,12 @@ function Get-StepIdentifier {
         # Normalize paths for cross-platform comparison
         $normalizedScript = $scriptName -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
         $normalizedStepperDir = $stepperDir -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
-        
+
+        # Skip if it's from the module's Private/Public folders or the main PSM1
         if ($normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Private$([System.IO.Path]::DirectorySeparatorChar)*" -or
             $normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Public$([System.IO.Path]::DirectorySeparatorChar)*" -or
-            $normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Stepper.psm1") {
+            $normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Stepper.psm1" -or
+            $normalizedScript -like "*$([System.IO.Path]::DirectorySeparatorChar)Modules$([System.IO.Path]::DirectorySeparatorChar)Stepper$([System.IO.Path]::DirectorySeparatorChar)*") {
             continue
         }
 

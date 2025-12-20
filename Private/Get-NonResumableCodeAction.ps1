@@ -13,7 +13,7 @@ function Get-NonResumableCodeAction {
         Code block with Lines and IsBeforeStop properties.
 
     .OUTPUTS
-        String with chosen action: 'Wrap', 'Move', 'Delete', or 'Ignore'.
+        String with chosen action: 'Wrap', 'MarkIgnored', 'Delete', or 'Ignore'.
     #>
     [CmdletBinding()]
     param(
@@ -33,54 +33,41 @@ function Get-NonResumableCodeAction {
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
     Write-Host ""
-    Write-Warning "Non-resumable code detected in ${ScriptName}:"
+    Write-Host "[!] Non-resumable code detected in ${ScriptName}." -ForegroundColor Magenta
+    Write-Host "    This code will execute on every run of this script," -ForegroundColor Magenta
+    Write-Host "    including resumed runs:" -ForegroundColor Magenta
+    Write-Host ""
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
         Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray
     }
-    Write-Host "This code will re-execute on every run, including resumed runs." -ForegroundColor Yellow
     Write-Host ""
 
+    Write-Host "How would you like to handle this?"
+    Write-Host ""
+    Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
+    Write-Host "  [M] Mark as expected to ignore this code on future script runs" -ForegroundColor White
+    Write-Host "  [D] Delete this code" -ForegroundColor White
     if ($hasStepperVar) {
-        Write-Warning "This code references `$Stepper variables!"
+        Write-Host "      WARNING: Because this code references `$Stepper variables," -ForegroundColor Yellow
+        Write-Host "               deleting it may impact functionality." -ForegroundColor Yellow
     }
-
-    Write-Host "How would you like to handle this?" -ForegroundColor Cyan
-    Write-Host "  [W] Wrap in New-Step block" -ForegroundColor White
-    if ($Block.IsBeforeStop) {
-        Write-Host "  [M] Move after Stop-Stepper" -ForegroundColor White
-    }
-    if ($hasStepperVar) {
-        Write-Host "  [D] Delete this code (WARNING: This will delete code that uses `$Stepper variables)" -ForegroundColor White
-    } else {
-        Write-Host "  [D] Delete this code" -ForegroundColor White
-    }
-    Write-Host "  [I] Ignore and continue (Default)" -ForegroundColor Cyan
+    Write-Host "  [I] Ignore and continue" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 
-    if ($Block.IsBeforeStop) {
-        Write-Host "Choice [w/m/d/" -NoNewline
-        Write-Host "I" -NoNewline -ForegroundColor Cyan
-        Write-Host "/q]: " -NoNewline
-    } else {
-        Write-Host "Choice [w/d/" -NoNewline
-        Write-Host "I" -NoNewline -ForegroundColor Cyan
-        Write-Host "/q]: " -NoNewline
-    }
+    Write-Host "Choice? [" -NoNewline
+    Write-Host "W" -NoNewline -ForegroundColor Cyan
+    Write-Host "/m/d/i/q]: " -NoNewline
     $choice = Read-Host
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }
-        'm' {
-            if ($Block.IsBeforeStop) {
-                return 'Move'
-            } else {
-                return 'Ignore'
-            }
-        }
+        '' { return 'Wrap' }  # Default to Wrap
+        'm' { return 'MarkIgnored' }
         'd' { return 'Delete' }
+        'i' { return 'Ignore' }
         'q' { return 'Quit' }
-        default { return 'Ignore' }
+        default { return 'Wrap' }  # Default to Wrap
     }
 }
