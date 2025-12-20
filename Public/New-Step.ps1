@@ -217,12 +217,12 @@ function New-Step {
                 }
 
                 Write-Host ""
-                Write-Host "Incomplete script run detected!" -ForegroundColor Cyan
+                Write-Host "Incomplete script run detected!"
                 Write-Host ""
-                Write-Host "Total Steps:      $totalSteps" -ForegroundColor Cyan
-                Write-Host "Steps Completed:  $($lastStepIndex + 1)" -ForegroundColor Cyan
-                Write-Host "Variables:        $availableVars" -ForegroundColor Cyan
-                Write-Host "Last Activity:    $timestamp" -ForegroundColor Cyan
+                Write-Host "Total Steps:      $totalSteps"
+                Write-Host "Steps Completed:  $($lastStepIndex + 1)"
+                Write-Host "Variables:        $availableVars"
+                Write-Host "Last Activity:    $timestamp"
                 Write-Host ""
 
                 if ($nextStepNumber -le $totalSteps) {
@@ -231,7 +231,7 @@ function New-Step {
                     $nextStepId = $stepLines[$lastStepIndex + 1]
                     $nextStepLine = ($nextStepId -split ':')[-1]
 
-                    $response = Read-Host "Resume $scriptName from Line ${nextStepLine}? (Y/n)"
+                    $response = Read-Host "Resume $scriptName from Line ${nextStepLine}? [Y/n]"
 
                     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
                         Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green

@@ -44,9 +44,10 @@ function Get-NonResumableCodeAction {
         Write-Warning "This code references `$Stepper variables!"
     }
 
-    Write-Host "How would you like to handle this?" -ForegroundColor Cyan
+    Write-Host "How would you like to handle this?"
+    Write-Host ""
     Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
-    Write-Host "  [M] Mark as expected (add #region Stepper ignore)" -ForegroundColor White
+    Write-Host "  [M] Mark as expected to ignore this code on future script runs" -ForegroundColor White
     if ($hasStepperVar) {
         Write-Host "  [D] Delete this code (WARNING: This will delete code that uses `$Stepper variables)" -ForegroundColor White
     } else {

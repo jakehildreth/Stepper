@@ -50,6 +50,25 @@ function Find-NonResumableCodeBlocks {
         }
     }
 
+    # Find all multi-line comment blocks
+    $commentBlocks = @()
+    $inCommentBlock = $false
+    $commentStart = -1
+    for ($i = 0; $i -lt $ScriptLines.Count; $i++) {
+        $line = $ScriptLines[$i]
+        if (-not $inCommentBlock -and $line -match '<#') {
+            $inCommentBlock = $true
+            $commentStart = $i
+        }
+        if ($inCommentBlock -and $line -match '#>') {
+            $commentBlocks += @{
+                Start = $commentStart
+                End = $i
+            }
+            $inCommentBlock = $false
+        }
+    }
+
     if ($NewStepBlocks.Count -gt 0) {
         # Check code BEFORE the first New-Step block
         $firstBlock = $NewStepBlocks[0]
@@ -60,17 +79,15 @@ function Find-NonResumableCodeBlocks {
                 continue
             }
 
+            # Skip if line is in a multi-line comment block
+            if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $commentBlocks) {
+                continue
+            }
+
             $line = $ScriptLines[$j].Trim()
             # Skip comments, empty lines, and common non-executable statements
             if ($line -and
                 $line -notmatch '^\s*#' -and
-                $line -notmatch '^\s*<#' -and
-                $line -notmatch '^\s*#>' -and
-                $line -notmatch '^\s*\.SYNOPSIS' -and
-                $line -notmatch '^\s*\.DESCRIPTION' -and
-                $line -notmatch '^\s*\.NOTES' -and
-                $line -notmatch '^\s*\.EXAMPLE' -and
-                $line -notmatch '^\s*\.PARAMETER' -and
                 $line -notmatch '^\s*\[CmdletBinding\(' -and
                 $line -notmatch '^\s*param\s*\(' -and
                 $line -notmatch '^\s*using\s+(namespace|module|assembly)' -and
@@ -99,6 +116,11 @@ function Find-NonResumableCodeBlocks {
                     continue
                 }
 
+                # Skip if line is in a multi-line comment block
+                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $commentBlocks) {
+                    continue
+                }
+
                 $line = $ScriptLines[$j].Trim()
                 if ($line -and $line -notmatch '^\s*#') {
                     $blockLines += $j
@@ -123,6 +145,11 @@ function Find-NonResumableCodeBlocks {
             for ($j = $gapStart; $j -le $gapEnd; $j++) {
                 # Skip if line is in an ignored region
                 if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
+                    continue
+                }
+
+                # Skip if line is in a multi-line comment block
+                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $commentBlocks) {
                     continue
                 }
 

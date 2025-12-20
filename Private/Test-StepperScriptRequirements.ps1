@@ -39,7 +39,8 @@ function Test-StepperScriptRequirements {
         }
 
         Write-Host ""
-        Write-Host "How would you like to handle this?" -ForegroundColor Cyan
+        Write-Host "How would you like to handle this?"
+        Write-Host ""
         Write-Host "  [A] Add missing declarations (Default)" -ForegroundColor Cyan
         Write-Host "  [S] Skip" -ForegroundColor White
         Write-Host "  [Q] Quit" -ForegroundColor White
