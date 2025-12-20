@@ -32,13 +32,12 @@ function Get-NonResumableCodeAction {
     $blockCode = $Block.Lines | ForEach-Object { $ScriptLines[$_].Trim() }
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
-    Write-Warning "Non-resumable code detected in ${ScriptName}:"
     Write-Host ""
+    Write-Warning "Non-resumable code detected in ${ScriptName}:"
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
-        Write-Host "${lineNum}: $lineContent" -ForegroundColor Gray
+        Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray
     }
-    Write-Host ""
     Write-Host "This code will re-execute on every run, including resumed runs." -ForegroundColor Yellow
     Write-Host ""
 
@@ -56,11 +55,20 @@ function Get-NonResumableCodeAction {
     } else {
         Write-Host "  [D] Delete this code" -ForegroundColor White
     }
-    Write-Host "  [I] Ignore and continue (Default)" -ForegroundColor White
+    Write-Host "  [I] Ignore and continue (Default)" -ForegroundColor Cyan
+    Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 
-    $promptText = if ($Block.IsBeforeStop) { "Choice [w/m/d/I]" } else { "Choice [w/d/I]" }
-    $choice = Read-Host $promptText
+    if ($Block.IsBeforeStop) {
+        Write-Host "Choice [w/m/d/" -NoNewline
+        Write-Host "I" -NoNewline -ForegroundColor Cyan
+        Write-Host "/q]: " -NoNewline
+    } else {
+        Write-Host "Choice [w/d/" -NoNewline
+        Write-Host "I" -NoNewline -ForegroundColor Cyan
+        Write-Host "/q]: " -NoNewline
+    }
+    $choice = Read-Host
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }
@@ -72,6 +80,7 @@ function Get-NonResumableCodeAction {
             }
         }
         'd' { return 'Delete' }
+        'q' { return 'Quit' }
         default { return 'Ignore' }
     }
 }
