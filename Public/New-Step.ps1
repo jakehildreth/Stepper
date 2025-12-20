@@ -217,7 +217,7 @@ function New-Step {
                 }
 
                 Write-Host ""
-                Write-Host "Incomplete script run detected!"
+                Write-Host "[!] Incomplete script run detected!" -ForegroundColor Magenta
                 Write-Host ""
                 Write-Host "Total Steps:      $totalSteps"
                 Write-Host "Steps Completed:  $($lastStepIndex + 1)"
@@ -231,16 +231,36 @@ function New-Step {
                     $nextStepId = $stepLines[$lastStepIndex + 1]
                     $nextStepLine = ($nextStepId -split ':')[-1]
 
-                    $response = Read-Host "Resume $scriptName from Line ${nextStepLine}? [Y/n]"
+                    Write-Host "How would you like to proceed?"
+                    Write-Host ""
+                    Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
+                    Write-Host "  [S] Start over" -ForegroundColor White
+                    Write-Host "  [Q] Quit" -ForegroundColor White
+                    Write-Host ""
+                    Write-Host "Choice? [" -NoNewline
+                    Write-Host "R" -NoNewline -ForegroundColor Cyan
+                    Write-Host "/s/q]: " -NoNewline
+                    $response = Read-Host
 
-                    if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
+                    if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
                         Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
                         $executionState.RestoreMode = $true
                         $executionState.TargetStep = $lastStep
                     }
-                    else {
+                    elseif ($response -eq 'S' -or $response -eq 's') {
                         Write-Host "Starting fresh..." -ForegroundColor Yellow
                         Remove-StepperState -StatePath $statePath
+                    }
+                    elseif ($response -eq 'Q' -or $response -eq 'q') {
+                        Write-Host ""
+                        Write-Host "Exiting..." -ForegroundColor Yellow
+                        exit
+                    }
+                    else {
+                        # Default to Resume for invalid input
+                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
                     }
                 } else {
                     Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow

@@ -33,25 +33,22 @@ function Get-NonResumableCodeAction {
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
     Write-Host ""
-    Write-Warning "Non-resumable code detected in ${ScriptName}.`nThis code will execute on every run of this script, including resumed runs:"
+    Write-Host "[!] Non-resumable code detected in ${ScriptName}." -ForegroundColor Magenta
+    Write-Host "    This code will execute on every run of this script, including resumed runs:" -ForegroundColor Magenta
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
         Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray
     }
     Write-Host ""
 
-    if ($hasStepperVar) {
-        Write-Warning "This code references `$Stepper variables!"
-    }
-
     Write-Host "How would you like to handle this?"
     Write-Host ""
     Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
     Write-Host "  [M] Mark as expected to ignore this code on future script runs" -ForegroundColor White
+    Write-Host "  [D] Delete this code" -ForegroundColor White
     if ($hasStepperVar) {
-        Write-Host "  [D] Delete this code (WARNING: This will delete code that uses `$Stepper variables)" -ForegroundColor White
-    } else {
-        Write-Host "  [D] Delete this code" -ForegroundColor White
+        Write-Host "      WARNING: Because this code references `$Stepper variables," -ForegroundColor Yellow
+        Write-Host "               deleting it may impact functionality." -ForegroundColor Yellow
     }
     Write-Host "  [I] Ignore and continue" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
