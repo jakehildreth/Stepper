@@ -35,12 +35,12 @@ jobs:
         Write-Host "Running Pester tests..." -ForegroundColor Cyan
         $testResults = Invoke-Pester -Path ./Tests/ -PassThru
         Write-Host "Tests completed: $($testResults.PassedCount) passed, $($testResults.FailedCount) failed" -ForegroundColor Cyan
-        
+
         if ($testResults.FailedCount -gt 0) {
             Write-Host "Tests failed! Build aborted." -ForegroundColor Red
             exit 1
         }
-        
+
         Write-Host "All tests passed!" -ForegroundColor Green
 
     - name: Build and Publish to PowerShell Gallery
