@@ -58,8 +58,8 @@ function Get-NonResumableCodeAction {
     }
     Write-Host "  [I] Ignore and continue (Default)" -ForegroundColor White
     Write-Host ""
-    
-    $promptText = if ($Block.IsBeforeStop) { "Choice (w/m/d/I)" } else { "Choice (w/d/I)" }
+
+    $promptText = if ($Block.IsBeforeStop) { "Choice [w/m/d/I]" } else { "Choice [w/d/I]" }
     $choice = Read-Host $promptText
 
     switch ($choice.ToLower()) {

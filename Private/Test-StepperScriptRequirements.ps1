@@ -2,10 +2,10 @@ function Test-StepperScriptRequirements {
     <#
     .SYNOPSIS
         Checks if script has required declarations and offers to add them.
-    
+
     .PARAMETER ScriptPath
         Path to the script to check.
-    
+
     .OUTPUTS
         $true if script was modified and needs to be re-run, $false otherwise.
     #>
@@ -17,34 +17,34 @@ function Test-StepperScriptRequirements {
 
     $scriptLines = Get-Content -Path $ScriptPath
     $scriptName = Split-Path $ScriptPath -Leaf
-    
+
     # Check for CmdletBinding
     $hasCmdletBinding = $scriptLines | Where-Object { $_ -match '^\s*\[CmdletBinding\(\)\]' }
-    
+
     # Check for #requires statement
     $hasRequires = $scriptLines | Where-Object { $_ -match '^\s*#requires\s+-Modules?\s+Stepper' }
-    
+
     $needsChanges = -not $hasCmdletBinding -or -not $hasRequires
-    
+
     if ($needsChanges) {
         Write-Host ""
         Write-Host "Script requirements check:" -ForegroundColor Cyan
-        
+
         if (-not $hasCmdletBinding) {
             Write-Host "  Missing [CmdletBinding()] declaration" -ForegroundColor Yellow
         }
-        
+
         if (-not $hasRequires) {
             Write-Host "  Missing #requires -Modules Stepper statement" -ForegroundColor Yellow
         }
-        
+
         Write-Host ""
         $response = Read-Host "Add missing declarations? [Y/n]"
-        
+
         if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
             $newScriptLines = @()
             $addedDeclarations = $false
-            
+
             # Find where to insert (after shebang/comments at top, before first code)
             $insertIndex = 0
             for ($i = 0; $i -lt $scriptLines.Count; $i++) {
@@ -56,28 +56,28 @@ function Test-StepperScriptRequirements {
                     break
                 }
             }
-            
+
             # Copy lines before insertion point
             for ($i = 0; $i -lt $insertIndex; $i++) {
                 $newScriptLines += $scriptLines[$i]
             }
-            
+
             # Add missing declarations
             if (-not $hasRequires) {
                 $newScriptLines += "#requires -Modules Stepper"
                 $addedDeclarations = $true
             }
-            
+
             if (-not $hasCmdletBinding) {
                 $newScriptLines += "[CmdletBinding()]"
                 $newScriptLines += "param()"
                 $addedDeclarations = $true
             }
-            
+
             if ($addedDeclarations) {
                 $newScriptLines += ""
             }
-            
+
             # Copy remaining lines, but skip existing param() if we added one
             $skipNextParam = (-not $hasCmdletBinding)
             for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) {
@@ -87,7 +87,7 @@ function Test-StepperScriptRequirements {
                 }
                 $newScriptLines += $scriptLines[$i]
             }
-            
+
             # Write back to file
             $newScriptLines | Set-Content -Path $ScriptPath -Force
             Write-Host ""
@@ -95,6 +95,6 @@ function Test-StepperScriptRequirements {
             return $true
         }
     }
-    
+
     return $false
 }
