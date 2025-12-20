@@ -32,6 +32,37 @@ function Find-NonResumableCodeBlocks {
     $nonResumableBlocks = @()
 
     if ($NewStepBlocks.Count -gt 0) {
+        # Check code BEFORE the first New-Step block
+        $firstBlock = $NewStepBlocks[0]
+        $blockLines = @()
+        for ($j = 0; $j -lt $firstBlock.Start; $j++) {
+            $line = $ScriptLines[$j].Trim()
+            # Skip comments, empty lines, and common non-executable statements
+            if ($line -and 
+                $line -notmatch '^\s*#' -and 
+                $line -notmatch '^\s*<#' -and
+                $line -notmatch '^\s*#>' -and
+                $line -notmatch '^\s*\.SYNOPSIS' -and
+                $line -notmatch '^\s*\.DESCRIPTION' -and
+                $line -notmatch '^\s*\.NOTES' -and
+                $line -notmatch '^\s*\.EXAMPLE' -and
+                $line -notmatch '^\s*\.PARAMETER' -and
+                $line -notmatch '^\s*\[CmdletBinding\(' -and
+                $line -notmatch '^\s*param\s*\(' -and
+                $line -notmatch '^\s*using\s+(namespace|module|assembly)' -and
+                $line -notmatch '^\s*\)\s*$' -and
+                $line -ne '.') {
+                $blockLines += $j
+            }
+        }
+
+        if ($blockLines.Count -gt 0) {
+            $nonResumableBlocks += @{
+                Lines = $blockLines
+                IsBeforeStop = $false
+            }
+        }
+
         # Check between consecutive New-Step blocks
         for ($i = 0; $i -lt $NewStepBlocks.Count - 1; $i++) {
             $gapStart = $NewStepBlocks[$i].End + 1
