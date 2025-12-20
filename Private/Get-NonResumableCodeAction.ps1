@@ -13,7 +13,7 @@ function Get-NonResumableCodeAction {
         Code block with Lines and IsBeforeStop properties.
 
     .OUTPUTS
-        String with chosen action: 'Wrap', 'Move', 'Delete', or 'Ignore'.
+        String with chosen action: 'Wrap', 'Delete', or 'Ignore'.
     #>
     [CmdletBinding()]
     param(
@@ -33,7 +33,7 @@ function Get-NonResumableCodeAction {
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
     Write-Host ""
-    Write-Warning "Non-resumable code detected in ${ScriptName}.`n    This code will re-execute on every run, including resumed runs:"
+    Write-Warning "Non-resumable code detected in ${ScriptName}.`nThis code will execute on every run of this script, including resumed runs:"
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
         Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray
@@ -46,9 +46,6 @@ function Get-NonResumableCodeAction {
 
     Write-Host "How would you like to handle this?" -ForegroundColor Cyan
     Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
-    if ($Block.IsBeforeStop) {
-        Write-Host "  [M] Move after Stop-Stepper" -ForegroundColor White
-    }
     if ($hasStepperVar) {
         Write-Host "  [D] Delete this code (WARNING: This will delete code that uses `$Stepper variables)" -ForegroundColor White
     } else {
@@ -58,28 +55,16 @@ function Get-NonResumableCodeAction {
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 
-    if ($Block.IsBeforeStop) {
-        Write-Host "Choice? [" -NoNewline
-        Write-Host "W" -NoNewline -ForegroundColor Cyan
-        Write-Host "/m/d/i/q]: " -NoNewline
-    } else {
-        Write-Host "Choice? [" -NoNewline
-        Write-Host "W" -NoNewline -ForegroundColor Cyan
-        Write-Host "/d/i/q]: " -NoNewline
-    }
+    Write-Host "Choice? [" -NoNewline
+    Write-Host "W" -NoNewline -ForegroundColor Cyan
+    Write-Host "/d/i/q]: " -NoNewline
     $choice = Read-Host
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }
         '' { return 'Wrap' }  # Default to Wrap
-        'm' {
-            if ($Block.IsBeforeStop) {
-                return 'Move'
-            } else {
-                return 'Ignore'
-            }
-        }
         'd' { return 'Delete' }
+        'i' { return 'Ignore' }
         'q' { return 'Quit' }
         default { return 'Wrap' }  # Default to Wrap
     }
