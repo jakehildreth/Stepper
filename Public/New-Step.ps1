@@ -135,6 +135,12 @@ function New-Step {
             foreach ($block in $nonResumableBlocks) {
                 $action = Get-NonResumableCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
 
+                if ($action -eq 'Quit') {
+                    Write-Host ""
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit
+                }
+                
                 if ($action -ne 'Ignore') {
                     # Mark these lines with the chosen action
                     foreach ($line in $block.Lines) {
