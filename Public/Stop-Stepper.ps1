@@ -60,11 +60,6 @@ function Stop-Stepper {
             $scriptName = Split-Path $scriptPath -Leaf
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptName"
 
-            # Clear the session state
-            if ($script:StepperSessionState) {
-                $script:StepperSessionState = $null
-            }
-
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleanup complete!"
 
             return

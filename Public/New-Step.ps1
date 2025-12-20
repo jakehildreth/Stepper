@@ -68,8 +68,23 @@ function New-Step {
         Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
     }
 
-    # Initialize module state on first call in this session
-    if (-not $script:StepperSessionState) {
+    # Check if this is the first step of this script execution
+    # We use a variable in the calling scope to track initialization per execution
+    $initVarName = '__StepperInitialized'
+    $isFirstStep = $false
+    try {
+        $initVar = $callingScope.PSVariable.Get($initVarName)
+        if (-not $initVar -or -not $initVar.Value) {
+            $isFirstStep = $true
+            $callingScope.PSVariable.Set($initVarName, $true)
+        }
+    } catch {
+        $isFirstStep = $true
+        $callingScope.PSVariable.Set($initVarName, $true)
+    }
+
+    # Initialize execution state on first step
+    if ($isFirstStep) {
         # Verify the script contains Stop-Stepper
         $scriptContent = Get-Content -Path $scriptPath -Raw
         if ($scriptContent -notmatch 'Stop-Stepper') {
@@ -98,19 +113,15 @@ function New-Step {
             }
         }
 
-        $script:StepperSessionState = @{
-            Initialized       = $false
+        # Store execution state in calling scope
+        $executionState = @{
             RestoreMode       = $false
             TargetStep        = $null
             CurrentScriptPath = $scriptPath
             CurrentScriptHash = $currentHash
             StatePath         = $statePath
         }
-    }
-
-    # First step: Check for existing state and prompt user
-    if (-not $script:StepperSessionState.Initialized) {
-        $script:StepperSessionState.Initialized = $true
+        $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
         # Check script requirements
         $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
@@ -224,8 +235,8 @@ function New-Step {
 
                     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
                         Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
-                        $script:StepperSessionState.RestoreMode = $true
-                        $script:StepperSessionState.TargetStep = $lastStep
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
                     }
                     else {
                         Write-Host "Starting fresh..." -ForegroundColor Yellow
@@ -243,19 +254,26 @@ function New-Step {
     # Determine if we should execute this step
     $shouldExecute = $true
 
-    if ($script:StepperSessionState.RestoreMode) {
+    # Get execution state from calling scope
+    try {
+        $executionState = $callingScope.PSVariable.Get('__StepperExecutionState').Value
+    } catch {
+        $executionState = $null
+    }
+
+    if ($executionState -and $executionState.RestoreMode) {
         # Format step identifier for display messages
         $stepIdParts = $stepId -split ':'
         $scriptName = Split-Path $stepIdParts[0] -Leaf
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
 
         # In restore mode: skip steps until we reach the target
-        if ($stepId -eq $script:StepperSessionState.TargetStep) {
+        if ($stepId -eq $executionState.TargetStep) {
             # This is the last completed step, skip it and disable restore mode
-            $script:StepperSessionState.RestoreMode = $false
+            $executionState.RestoreMode = $false
             $shouldExecute = $false
         }
-        elseif ($script:StepperSessionState.RestoreMode) {
+        elseif ($executionState.RestoreMode) {
             # Still skipping
             Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Skipping step: $displayStepId" -ForegroundColor DarkGray
             $shouldExecute = $false
