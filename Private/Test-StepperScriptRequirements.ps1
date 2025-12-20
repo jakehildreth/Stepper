@@ -40,13 +40,13 @@ function Test-StepperScriptRequirements {
 
         Write-Host ""
         Write-Host "How would you like to handle this?" -ForegroundColor Cyan
-        Write-Host "  [Y] Add missing declarations (Default)" -ForegroundColor Cyan
-        Write-Host "  [N] Skip" -ForegroundColor White
+        Write-Host "  [A] Add missing declarations (Default)" -ForegroundColor Cyan
+        Write-Host "  [S] Skip" -ForegroundColor White
         Write-Host "  [Q] Quit" -ForegroundColor White
         Write-Host ""
-        Write-Host "Choice [" -NoNewline
-        Write-Host "Y" -NoNewline -ForegroundColor Cyan
-        Write-Host "/n/q]: " -NoNewline
+        Write-Host "Choice? [" -NoNewline
+        Write-Host "A" -NoNewline -ForegroundColor Cyan
+        Write-Host "/s/q]: " -NoNewline
         $response = Read-Host
 
         if ($response -eq 'Q' -or $response -eq 'q') {
@@ -55,7 +55,7 @@ function Test-StepperScriptRequirements {
             exit
         }
 
-        if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
+        if ($response -eq '' -or $response -eq 'A' -or $response -eq 'a') {
             $newScriptLines = @()
             $addedDeclarations = $false
 

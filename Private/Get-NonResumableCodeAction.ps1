@@ -33,12 +33,11 @@ function Get-NonResumableCodeAction {
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
     Write-Host ""
-    Write-Warning "Non-resumable code detected in ${ScriptName}:"
+    Write-Warning "Non-resumable code detected in ${ScriptName}.`n    This code will re-execute on every run, including resumed runs:"
     foreach ($lineNum in $blockLineNums) {
         $lineContent = $ScriptLines[$lineNum - 1].Trim()
         Write-Host "  ${lineNum}: $lineContent" -ForegroundColor Gray
     }
-    Write-Host "This code will re-execute on every run, including resumed runs." -ForegroundColor Yellow
     Write-Host ""
 
     if ($hasStepperVar) {
@@ -46,7 +45,7 @@ function Get-NonResumableCodeAction {
     }
 
     Write-Host "How would you like to handle this?" -ForegroundColor Cyan
-    Write-Host "  [W] Wrap in New-Step block" -ForegroundColor White
+    Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
     if ($Block.IsBeforeStop) {
         Write-Host "  [M] Move after Stop-Stepper" -ForegroundColor White
     }
@@ -55,23 +54,24 @@ function Get-NonResumableCodeAction {
     } else {
         Write-Host "  [D] Delete this code" -ForegroundColor White
     }
-    Write-Host "  [I] Ignore and continue (Default)" -ForegroundColor Cyan
+    Write-Host "  [I] Ignore and continue" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
     Write-Host ""
 
     if ($Block.IsBeforeStop) {
-        Write-Host "Choice [w/m/d/" -NoNewline
-        Write-Host "I" -NoNewline -ForegroundColor Cyan
-        Write-Host "/q]: " -NoNewline
+        Write-Host "Choice? [" -NoNewline
+        Write-Host "W" -NoNewline -ForegroundColor Cyan
+        Write-Host "/m/d/i/q]: " -NoNewline
     } else {
-        Write-Host "Choice [w/d/" -NoNewline
-        Write-Host "I" -NoNewline -ForegroundColor Cyan
-        Write-Host "/q]: " -NoNewline
+        Write-Host "Choice? [" -NoNewline
+        Write-Host "W" -NoNewline -ForegroundColor Cyan
+        Write-Host "/d/i/q]: " -NoNewline
     }
     $choice = Read-Host
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }
+        '' { return 'Wrap' }  # Default to Wrap
         'm' {
             if ($Block.IsBeforeStop) {
                 return 'Move'
@@ -81,6 +81,6 @@ function Get-NonResumableCodeAction {
         }
         'd' { return 'Delete' }
         'q' { return 'Quit' }
-        default { return 'Ignore' }
+        default { return 'Wrap' }  # Default to Wrap
     }
 }
