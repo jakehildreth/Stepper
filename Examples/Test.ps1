@@ -1,14 +1,12 @@
+Write-Host 'Non-resumable code before the first step.'
+
 
 New-Step {
     $Stepper.ProcessCount = (Get-Process).Count
     $Stepper.ItemCount = (Get-ChildItem).Count
 }
 
-Write-Host 'Non-resumable code between steps 1 and 2.'
-
-New-Step {
-    Write-Host "Running process count: $($Stepper.ProcessCount)"
-}
+Write-Host "Running process count: $($Stepper.ProcessCount)"
 
 New-Step {
     $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
@@ -19,8 +17,10 @@ New-Step {
     Write-Host "Items in current folder count: $($Stepper.ItemCount)"
 }
 
-New-Step {
-    $Stepper.ChildItems| Select-Object -Last 3
-}
+Write-Host "Non-resumable code between last step and Stop-Stepper"
+$Stepper.ChildItems | Select-Object -Last 3
+Write-Host "Because it references $Stepper.Variables, it should not be moved"
+Write-Host "after Stop-Stepper"
+
 
 Stop-Stepper
