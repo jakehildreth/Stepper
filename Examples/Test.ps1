@@ -18,8 +18,5 @@ New-Step {
 
 Write-Host 'Non-resumable code between last step and Stop-Stepper'
 $Stepper.ChildItems | Select-Object -Last 3
-Write-Host 'Because it references $Stepper.Variables, it should not be moved'
-Write-Host 'after Stop-Stepper'
-
 
 Stop-Stepper
