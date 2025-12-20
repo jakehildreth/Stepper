@@ -112,6 +112,12 @@ function New-Step {
     if (-not $script:StepperSessionState.Initialized) {
         $script:StepperSessionState.Initialized = $true
 
+        # Check script requirements
+        $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
+        if ($requirementsModified) {
+            exit
+        }
+
         # Check for non-resumable code between New-Step blocks and before Stop-Stepper
         $scriptLines = Get-Content -Path $scriptPath
 
