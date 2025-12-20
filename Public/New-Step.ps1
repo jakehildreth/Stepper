@@ -140,7 +140,7 @@ function New-Step {
                     Write-Host "Exiting..." -ForegroundColor Yellow
                     exit
                 }
-                
+
                 if ($action -ne 'Ignore') {
                     # Mark these lines with the chosen action
                     foreach ($line in $block.Lines) {

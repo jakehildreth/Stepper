@@ -54,7 +54,7 @@ function Test-StepperScriptRequirements {
             Write-Host "Exiting..." -ForegroundColor Yellow
             exit
         }
-        
+
         if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
             $newScriptLines = @()
             $addedDeclarations = $false
