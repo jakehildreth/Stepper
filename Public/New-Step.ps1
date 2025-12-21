@@ -191,7 +191,8 @@ function New-Step {
                 # Find all step line numbers
                 $stepLines = @()
                 $lineNumber = 1
-                foreach ($line in (Get-Content -Path $scriptPath)) {
+                $lines = $scriptContent -split "`r?`n"
+                foreach ($line in $lines) {
                     if ($line -match '^\s*New-Step\s+\{') {
                         $stepLines += "${scriptPath}:${lineNumber}"
                     }
