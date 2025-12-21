@@ -36,9 +36,8 @@ function Show-MoreDetails {
     Write-Host ""
     if ($ShowHashComparison) {
         Write-Host "  Previous script hash: $($ExistingState.ScriptHash)"
-        Write-Host "  Current script hash:  $CurrentHash"
     }
-    Write-Host "  Script hash: $($ExistingState.ScriptHash)"
+    Write-Host "  Current script hash: $CurrentHash"
 
     # Show Stepper variables and their contents
     Write-Host ""
