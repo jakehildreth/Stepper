@@ -72,22 +72,37 @@ function Show-MoreDetails {
         $prevLines = $ExistingState.ScriptContents -split "`n"
         $prevStepLine = ($LastStep -split ':')[-1] -as [int]
 
-        # Attempt to extract the full New-Step block by matching braces
+        # Attempt to extract the full New-Step block using PowerShell's AST,
+        # so that braces inside strings or comments don't confuse the logic.
         $block = @()
-        $depth = 0
-        $started = $false
-        for ($i = $prevStepLine - 1; $i -lt $prevLines.Count; $i++) {
-            $lineText = $prevLines[$i]
-            $openCount = ([regex]::Matches($lineText, '\{')).Count
-            $closeCount = ([regex]::Matches($lineText, '\}')).Count
+        $tokens = $null
+        $parseErrors = $null
+        $scriptAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $ExistingState.ScriptContents,
+            [ref]$tokens,
+            [ref]$parseErrors
+        )
 
-            if (-not $started -and $openCount -gt 0) {
-                $started = $true
-            }
-            if ($started) {
-                $block += $lineText
-                $depth += $openCount - $closeCount
-                if ($depth -le 0) { break }
+        if (-not $parseErrors -or $parseErrors.Count -eq 0) {
+            # Find the innermost script block that spans the previous step line.
+            $scriptBlockAst = $scriptAst.Find(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.ScriptBlockAst] -and
+                    $node.Extent.StartLineNumber -le $prevStepLine -and
+                    $node.Extent.EndLineNumber -ge $prevStepLine
+                },
+                $true
+            )
+
+            if ($null -ne $scriptBlockAst) {
+                $startLine = $scriptBlockAst.Extent.StartLineNumber
+                $endLine   = $scriptBlockAst.Extent.EndLineNumber
+
+                for ($i = $startLine; $i -le $endLine -and $i -le $prevLines.Count; $i++) {
+                    # -1 because $prevLines is 0-based, while Extent line numbers are 1-based.
+                    $block += $prevLines[$i - 1]
+                }
             }
         }
 
