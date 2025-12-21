@@ -183,8 +183,91 @@ function New-Step {
         if ($existingState) {
             # Check if script has been modified
             if ($existingState.ScriptHash -ne $currentHash) {
-                Write-Host "Script has been modified since last run. Starting fresh." -ForegroundColor Yellow
-                Remove-StepperState -StatePath $statePath
+                # Script has been modified since last run — prompt user for action
+                $scriptContent = Get-Content -Path $scriptPath -Raw
+                $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $totalSteps = $stepMatches.Count
+
+                # Find all step line numbers
+                $stepLines = @()
+                $lineNumber = 1
+                foreach ($line in (Get-Content -Path $scriptPath)) {
+                    if ($line -match '^\s*New-Step\s+\{') {
+                        $stepLines += "${scriptPath}:${lineNumber}"
+                    }
+                    $lineNumber++
+                }
+
+                $lastStep = $existingState.LastCompletedStep
+                $lastStepIndex = $stepLines.IndexOf($lastStep)
+                $nextStepNumber = $lastStepIndex + 2  # +1 for next step, +1 because index is 0-based
+
+                $timestamp = [DateTime]::Parse($existingState.Timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+                $availableVars = if ($existingState.StepperData -and $existingState.StepperData.Count -gt 0) {
+                    ($existingState.StepperData.Keys | Sort-Object) -join ', '
+                } else {
+                    'None'
+                }
+
+                $scriptName = Split-Path $scriptPath -Leaf
+                $nextStepId = $stepLines[$lastStepIndex + 1]
+                $nextStepLine = ($nextStepId -split ':')[-1]
+
+                while ($true) {
+                    Write-Host ""
+                    Write-Host "[!] Incomplete script run detected, but $scriptName has been modified." -ForegroundColor Magenta
+                    Write-Host ""
+                    Write-Host "Total Steps:      $totalSteps"
+                    Write-Host "Steps Completed:  $($lastStepIndex + 1)"
+                    Write-Host "Variables:        $availableVars"
+                    Write-Host "Last Activity:    $timestamp"
+                    Write-Host ""
+
+                    Write-Host "How would you like to proceed?"
+                    Write-Host ""
+                    Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (May produce inconsistent results)" -ForegroundColor White
+                    Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
+                    Write-Host "  [M] More details" -ForegroundColor White
+                    Write-Host "  [Q] Quit" -ForegroundColor White
+                    Write-Host ""
+                    Write-Host "Choice? [" -NoNewline
+                    Write-Host "r" -NoNewline -ForegroundColor White
+                    Write-Host "/S" -NoNewline -ForegroundColor Cyan
+                    Write-Host "/m/q]: " -NoNewline
+                    $response = Read-Host
+
+                    if ($response -eq '' -or $response -eq 'S' -or $response -eq 's') {
+                        Write-Host "Starting fresh..." -ForegroundColor Yellow
+                        Remove-StepperState -StatePath $statePath
+                        break
+                    }
+                    elseif ($response -eq 'R' -or $response -eq 'r') {
+                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
+                        break
+                    }
+                    elseif ($response -eq 'M' -or $response -eq 'm') {
+                        Write-Host ""
+                        Write-Host "More details:" -ForegroundColor Yellow
+                        Write-Host "    Previous script hash: $($existingState.ScriptHash)"
+                        Write-Host "    Current script hash:  $currentHash"
+                        Write-Host "    Consider inspecting the script changes and choosing Start over if unsure."
+                        Write-Host ""
+                        continue
+                    }
+                    elseif ($response -eq 'Q' -or $response -eq 'q') {
+                        Write-Host ""
+                        Write-Host "Exiting..." -ForegroundColor Yellow
+                        exit
+                    }
+                    else {
+                        # Default to Start over for invalid input
+                        Write-Host "Starting fresh..." -ForegroundColor Yellow
+                        Remove-StepperState -StatePath $statePath
+                        break
+                    }
+                }
             }
             else {
                 # Count total steps in the script by finding all New-Step calls
