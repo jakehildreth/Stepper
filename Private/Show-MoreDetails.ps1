@@ -107,17 +107,19 @@ function Show-MoreDetails {
     $ns = [int]$NextStepLine
     $start2 = [Math]::Max(1, $ns - 2)
     $end2 = $ns + 3
-    $ln = 1
-    foreach ($line in (Get-Content -Path $ScriptPath)) {
-        if ($ln -ge $start2 -and $ln -le $end2) {
-            $display = ($line -replace "`t", "    ").TrimEnd()
-            if ($ln -eq $ns) {
-                Write-Host ("{0,5}: {1}" -f $ln, $display) -ForegroundColor Cyan
-            } else {
-                Write-Host ("{0,5}: {1}" -f $ln, $display)
-            }
+
+    # Read only as many lines as we need for context, instead of the entire file
+    $contextLines = Get-Content -Path $ScriptPath -TotalCount $end2
+    $lastLineToShow = [Math]::Min($end2, $contextLines.Count)
+
+    for ($ln = $start2; $ln -le $lastLineToShow; $ln++) {
+        $line = $contextLines[$ln - 1]
+        $display = ($line -replace "`t", "    ").TrimEnd()
+        if ($ln -eq $ns) {
+            Write-Host ("{0,5}: {1}" -f $ln, $display) -ForegroundColor Cyan
+        } else {
+            Write-Host ("{0,5}: {1}" -f $ln, $display)
         }
-        $ln++
     }
 
     Write-Host ""
