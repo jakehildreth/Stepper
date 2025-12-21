@@ -256,7 +256,7 @@ function New-Step {
                         Write-Host "  [M] More details" -ForegroundColor White
                         Write-Host "  [Q] Quit" -ForegroundColor White
                         Write-Host ""
-Write-Host "Choice? [r/S/m/q]: " -NoNewline
+                        Write-Host "Choice? [r/S/m/q]: " -NoNewline
                         $moreResponse = Read-Host
 
                         if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
