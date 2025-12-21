@@ -34,7 +34,6 @@ function Update-ScriptWithNonResumableActions {
 
     $newScriptLines = @()
     $linesToMove = @()
-    $lastBlock = $NewStepBlocks[$NewStepBlocks.Count - 1]
 
     # Group lines to wrap by consecutive sequences
     $linesToWrap = @($Actions.Keys | Where-Object { $Actions[$_].Action -eq 'Wrap' } | Sort-Object)

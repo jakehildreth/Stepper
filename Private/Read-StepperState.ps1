@@ -11,7 +11,7 @@ function Read-StepperState {
         The path to the state file.
 
     .OUTPUTS
-        PSCustomObject or $null - The state object containing ScriptHash, LastCompletedStep, Timestamp, and StepperData
+        PSCustomObject or $null - The state object containing ScriptHash, ScriptContents, LastCompletedStep, Timestamp, and StepperData
     #>
     [CmdletBinding()]
     param(

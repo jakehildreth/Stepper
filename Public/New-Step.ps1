@@ -248,13 +248,43 @@ function New-Step {
                         break
                     }
                     elseif ($response -eq 'M' -or $response -eq 'm') {
+                        Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -ShowHashComparison
+
+                        # Re-display the bottom inline menu and accept an immediate choice
+                        Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (May produce inconsistent results)" -ForegroundColor White
+                        Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
+                        Write-Host "  [M] More details" -ForegroundColor White
+                        Write-Host "  [Q] Quit" -ForegroundColor White
                         Write-Host ""
-                        Write-Host "More details:" -ForegroundColor Yellow
-                        Write-Host "    Previous script hash: $($existingState.ScriptHash)"
-                        Write-Host "    Current script hash:  $currentHash"
-                        Write-Host "    Consider inspecting the script changes and choosing Start over if unsure."
-                        Write-Host ""
-                        continue
+Write-Host "Choice? [r/S/m/q]: " -NoNewline
+                        $moreResponse = Read-Host
+
+                        if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
+                            Write-Host "Starting fresh..." -ForegroundColor Yellow
+                            Remove-StepperState -StatePath $statePath
+                            break
+                        }
+                        elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
+                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            $executionState.RestoreMode = $true
+                            $executionState.TargetStep = $lastStep
+                            break
+                        }
+                        elseif ($moreResponse -eq 'M' -or $moreResponse -eq 'm') {
+                            # Re-display details (loop)
+                            continue
+                        }
+                        elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
+                            Write-Host ""
+                            Write-Host "Exiting..." -ForegroundColor Yellow
+                            exit
+                        }
+                        else {
+                            # Default to Start over for invalid input
+                            Write-Host "Starting fresh..." -ForegroundColor Yellow
+                            Remove-StepperState -StatePath $statePath
+                            break
+                        }
                     }
                     elseif ($response -eq 'Q' -or $response -eq 'q') {
                         Write-Host ""
@@ -314,36 +344,81 @@ function New-Step {
                     $nextStepId = $stepLines[$lastStepIndex + 1]
                     $nextStepLine = ($nextStepId -split ':')[-1]
 
-                    Write-Host "How would you like to proceed?"
-                    Write-Host ""
-                    Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
-                    Write-Host "  [S] Start over" -ForegroundColor White
-                    Write-Host "  [Q] Quit" -ForegroundColor White
-                    Write-Host ""
-                    Write-Host "Choice? [" -NoNewline
-                    Write-Host "R" -NoNewline -ForegroundColor Cyan
-                    Write-Host "/s/q]: " -NoNewline
-                    $response = Read-Host
-
-                    if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
-                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
-                        $executionState.RestoreMode = $true
-                        $executionState.TargetStep = $lastStep
-                    }
-                    elseif ($response -eq 'S' -or $response -eq 's') {
-                        Write-Host "Starting fresh..." -ForegroundColor Yellow
-                        Remove-StepperState -StatePath $statePath
-                    }
-                    elseif ($response -eq 'Q' -or $response -eq 'q') {
+                    while ($true) {
+                        Write-Host "How would you like to proceed?"
                         Write-Host ""
-                        Write-Host "Exiting..." -ForegroundColor Yellow
-                        exit
-                    }
-                    else {
-                        # Default to Resume for invalid input
-                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
-                        $executionState.RestoreMode = $true
-                        $executionState.TargetStep = $lastStep
+                        Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
+                        Write-Host "  [S] Start over" -ForegroundColor White
+                        Write-Host "  [M] More details" -ForegroundColor White
+                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host ""
+                        Write-Host "Choice? [" -NoNewline
+                        Write-Host "R" -NoNewline -ForegroundColor Cyan
+                        Write-Host "/s/m/q]: " -NoNewline
+                        $response = Read-Host
+
+                        if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
+                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            $executionState.RestoreMode = $true
+                            $executionState.TargetStep = $lastStep
+                            break
+                        }
+                        elseif ($response -eq 'S' -or $response -eq 's') {
+                            Write-Host "Starting fresh..." -ForegroundColor Yellow
+                            Remove-StepperState -StatePath $statePath
+                            break
+                        }
+                        elseif ($response -eq 'M' -or $response -eq 'm') {
+                            Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine
+
+                            # Print the action menu again at the bottom of the details and accept an immediate choice
+                            Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
+                            Write-Host "  [S] Start over" -ForegroundColor White
+                            Write-Host "  [M] More details" -ForegroundColor White
+                            Write-Host "  [Q] Quit" -ForegroundColor White
+                            Write-Host ""
+                            Write-Host "Choice? [R/s/m/q]: " -NoNewline
+                            $moreResponse = Read-Host
+
+                            if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
+                                Write-Host "Starting fresh..." -ForegroundColor Yellow
+                                Remove-StepperState -StatePath $statePath
+                                break
+                            }
+                            elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
+                                Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                                $executionState.RestoreMode = $true
+                                $executionState.TargetStep = $lastStep
+                                break
+                            }
+                            elseif ($moreResponse -eq 'M' -or $moreResponse -eq 'm') {
+                                # Re-display details (loop)
+                                continue
+                            }
+                            elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
+                                Write-Host ""
+                                Write-Host "Exiting..." -ForegroundColor Yellow
+                                exit
+                            }
+                            else {
+                                # Default to Start over for invalid input
+                                Write-Host "Starting fresh..." -ForegroundColor Yellow
+                                Remove-StepperState -StatePath $statePath
+                                break
+                            }
+                        }
+                        elseif ($response -eq 'Q' -or $response -eq 'q') {
+                            Write-Host ""
+                            Write-Host "Exiting..." -ForegroundColor Yellow
+                            exit
+                        }
+                        else {
+                            # Default to Resume for invalid input
+                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            $executionState.RestoreMode = $true
+                            $executionState.TargetStep = $lastStep
+                            break
+                        }
                     }
                 } else {
                     Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow
@@ -424,7 +499,9 @@ function New-Step {
 
             # Update state file after successful execution (including $Stepper data)
             $stepperData = $callingScope.PSVariable.Get('Stepper').Value
-            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData
+            # Persist state including the script contents for better change inspection
+            $scriptContents = Get-Content -Path $scriptPath -Raw
+            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData -ScriptContents $scriptContents
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
 
             if ($stepperData -and $stepperData.Count -gt 0) {

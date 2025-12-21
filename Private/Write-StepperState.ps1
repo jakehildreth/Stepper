@@ -18,6 +18,9 @@ function Write-StepperState {
     .PARAMETER StepperData
         The $Stepper hashtable to persist.
 
+    .PARAMETER ScriptContents
+        The full contents of the script at the time of saving (string). Useful for inspection when the script changes.
+
     .OUTPUTS
         None
     #>
@@ -33,11 +36,15 @@ function Write-StepperState {
         [string]$LastCompletedStep,
 
         [Parameter()]
-        [hashtable]$StepperData
+        [hashtable]$StepperData,
+
+        [Parameter()]
+        [string]$ScriptContents
     )
 
     $state = [PSCustomObject]@{
         ScriptHash        = $ScriptHash
+        ScriptContents    = $ScriptContents
         LastCompletedStep = $LastCompletedStep
         Timestamp         = (Get-Date).ToString('o')
         StepperData       = $StepperData
