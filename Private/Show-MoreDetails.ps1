@@ -69,7 +69,12 @@ function Show-MoreDetails {
     Write-Host ""
     if ($ExistingState.ScriptContents) {
         $prevLines = $ExistingState.ScriptContents -split "`n"
-        $prevStepLine = ($LastStep -split ':')[-1] -as [int]
+        $prevStepLine = $null
+        if ($LastStep -and ($LastStep -match ':(\d+)$')) {
+            $prevStepLine = [int]$Matches[1]
+        } else {
+            Write-Host "  No valid LastCompletedStep recorded." -ForegroundColor Yellow
+        }
 
         # Attempt to extract the full New-Step block using PowerShell's AST,
         # so that braces inside strings or comments don't confuse the logic.
@@ -83,24 +88,100 @@ function Show-MoreDetails {
         )
 
         if (-not $parseErrors -or $parseErrors.Count -eq 0) {
-            # Find the innermost script block that spans the previous step line.
-            $scriptBlockAst = $scriptAst.Find(
+            # Find the New-Step command that contains the previous step line, then get its script-block argument
+            $cmdAst = $scriptAst.Find(
                 {
                     param($node)
-                    $node -is [System.Management.Automation.Language.ScriptBlockAst] -and
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    ($node.GetCommandName() -eq 'New-Step') -and
                     $node.Extent.StartLineNumber -le $prevStepLine -and
                     $node.Extent.EndLineNumber -ge $prevStepLine
                 },
                 $true
             )
 
-            if ($null -ne $scriptBlockAst) {
-                $startLine = $scriptBlockAst.Extent.StartLineNumber
-                $endLine   = $scriptBlockAst.Extent.EndLineNumber
+            # Collect all New-Step commands with scriptblock arguments
+            $cmdList = $scriptAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and ($node.GetCommandName() -eq 'New-Step') }, $true) |
+                      ForEach-Object {
+                          $sb = $_.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockAst] } | Select-Object -First 1
+                          if ($sb) {
+                              [pscustomobject]@{
+                                  Command = $_
+                                  ScriptBlock = $sb
+                                  Start = $sb.Extent.StartLineNumber
+                                  End = $sb.Extent.EndLineNumber
+                                  CmdStart = $_.Extent.StartLineNumber
+                                  CmdEnd = $_.Extent.EndLineNumber
+                              }
+                          }
+                      }
+
+            $scriptBlockAst = $null
+
+            # Prefer a scriptblock that actually spans the previous step line
+            $candidate = $cmdList | Where-Object { $_.Start -le $prevStepLine -and $_.End -ge $prevStepLine } | Select-Object -First 1
+
+            # If none span the line, prefer a command whose declaration line matches the step line
+            if (-not $candidate) {
+                $candidate = $cmdList | Where-Object { $_.CmdStart -eq $prevStepLine } | Select-Object -First 1
+            }
+
+            # If still none, pick the closest preceding scriptblock (highest Start <= prevStepLine)
+            if (-not $candidate) {
+                $candidate = $cmdList | Where-Object { $_.Start -lt $prevStepLine } | Sort-Object -Property Start -Descending | Select-Object -First 1
+            }
+
+            if ($candidate) {
+                $scriptBlockAst = $candidate.ScriptBlock
+                $startLine = $candidate.Start
+                $endLine = $candidate.End
 
                 for ($i = $startLine; $i -le $endLine -and $i -le $prevLines.Count; $i++) {
-                    # -1 because $prevLines is 0-based, while Extent line numbers are 1-based.
                     $block += $prevLines[$i - 1]
+                }
+            } else {
+                Write-Verbose "Show-MoreDetails: AST lookup failed for New-Step around line $prevStepLine; attempting manual brace-match fallback"
+
+                # Search upward for the nearest 'New-Step {' start line
+                $foundStart = $null
+                for ($s = $prevStepLine; $s -ge 1; $s--) {
+                    if ($prevLines[$s - 1] -match '^\s*New-Step\s*\{') {
+                        $foundStart = $s
+                        break
+                    }
+                }
+
+                if ($foundStart) {
+                    $level = 0
+                    $endLine = $foundStart
+
+                    for ($i = $foundStart; $i -le $prevLines.Count; $i++) {
+                        $lineText = $prevLines[$i - 1]
+
+                        # Strip simple quoted strings to reduce brace noise
+                        $stripped = $lineText -replace "'[^']*'", '' -replace '"[^"]*"', ''
+
+                        $opens = ($stripped -split '{').Count - 1
+                        $closes = ($stripped -split '}').Count - 1
+                        $level += $opens - $closes
+
+                        if ($level -le 0) {
+                            $endLine = $i
+                            break
+                        }
+                    }
+
+                    if ($endLine -ge $foundStart) {
+                        for ($i = $foundStart; $i -le $endLine -and $i -le $prevLines.Count; $i++) {
+                            $block += $prevLines[$i - 1]
+                        }
+                    }
+                    else {
+                        Write-Verbose "Show-MoreDetails: Manual brace-match failed to find end for New-Step starting at $foundStart"
+                    }
+                }
+                else {
+                    Write-Verbose "Show-MoreDetails: No 'New-Step {' found above line $prevStepLine"
                 }
             }
         }
