@@ -6,7 +6,7 @@ A PowerShell module for creating resumable scripts with automatic state persiste
 
 - Each step is tracked by its location in the script (file:line)
 - State is saved after each successful step in a `.stepper` file (includes `ScriptContents`, `LastCompletedStep`, timestamp, and persisted `$Stepper` data)
-- On resume, completed steps are skipped automatically
+- On resume, completed steps can be skipped automatically
 - If the script has changed between runs, Stepper prompts the user to Resume, Start over (removes the state file), view More details, or Quit
 - Non-resumable code is detected and can be suppressed with `# stepper:ignore` or handled interactively
 - Use the More details view to inspect saved step body, Stepper variables, and restart context
