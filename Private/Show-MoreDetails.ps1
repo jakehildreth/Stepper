@@ -83,23 +83,28 @@ function Show-MoreDetails {
         )
 
         if (-not $parseErrors -or $parseErrors.Count -eq 0) {
-            # Find the innermost script block that spans the previous step line.
-            $scriptBlockAst = $scriptAst.Find(
+            # Find the New-Step command that contains the previous step line, then get its script-block argument
+            $cmdAst = $scriptAst.Find(
                 {
                     param($node)
-                    $node -is [System.Management.Automation.Language.ScriptBlockAst] -and
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    ($node.GetCommandName() -eq 'New-Step') -and
                     $node.Extent.StartLineNumber -le $prevStepLine -and
                     $node.Extent.EndLineNumber -ge $prevStepLine
                 },
                 $true
             )
 
+            $scriptBlockAst = $null
+            if ($null -ne $cmdAst) {
+                $scriptBlockAst = $cmdAst.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockAst] } | Select-Object -First 1
+            }
+
             if ($null -ne $scriptBlockAst) {
                 $startLine = $scriptBlockAst.Extent.StartLineNumber
                 $endLine   = $scriptBlockAst.Extent.EndLineNumber
 
                 for ($i = $startLine; $i -le $endLine -and $i -le $prevLines.Count; $i++) {
-                    # -1 because $prevLines is 0-based, while Extent line numbers are 1-based.
                     $block += $prevLines[$i - 1]
                 }
             }
