@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/4717179e-1698-4e19-aac3-e514d04333b8
 - State is saved after each successful step in a `.stepper` file (includes `ScriptContents`, `LastCompletedStep`, timestamp, and persisted `$Stepper` data)
 - On resume, completed steps can be skipped automatically
 - If the script has changed between runs, Stepper prompts the user to Resume, Start over (removes the state file), view More details, or Quit
-- Non-resumable code is detected and can be suppressed with `# stepper:ignore` or handled interactively
+- Non-resumable code is detected and can be suppressed with `#region Stepper ignore`/`#endregion Stepper ignore` or handled interactively
 - Use the More details view to inspect saved step body, Stepper variables, and restart context
 - Call `Stop-Stepper` at the end to clean up
 
