@@ -11,6 +11,11 @@ $Stepper.ProcessCount = (Get-Process).Count
 $Stepper.ItemCount = (Get-ChildItem).Count
 $Stepper.CollectionTime = Get-Date
 
+Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
+Write-Host "Hey, $($Stepper.Name)!"
+Write-Host "There are $($Stepper.ItemCount) items in this directory."
+Write-Host "Press Ctrl+C to simulate exiting by mistake."; Pause
+
 New-Step {
     $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
@@ -21,6 +26,4 @@ New-Step {
     Write-Host "Processes currently running: $($Stepper.ProcessCount)"
 }
 
-Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
-Write-Host "Hey, $($Stepper.Name)!"
-Write-Host "There are $($Stepper.ItemCount) items in this directory."
+#
