@@ -168,6 +168,10 @@ function New-Step {
                 $updatedContent += "`nStop-Stepper`n"
 
                 Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+
+                # Delete state file since script was modified
+                Remove-StepperState -StatePath $statePath
+
                 Write-Host ""
                 Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
 
@@ -192,6 +196,10 @@ function New-Step {
                 $updatedContent += "`nStop-Stepper`n"
 
                 Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+
+                # Delete state file since script was modified
+                Remove-StepperState -StatePath $statePath
+
                 Write-Host ""
                 Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
 
