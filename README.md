@@ -1,6 +1,10 @@
 ﻿# Stepper
 
-A PowerShell module for creating resumable scripts with automatic state persistence.
+A PowerShell utility module for creating resumable scripts with automatic state persistence.
+
+## Demo
+
+https://github.com/user-attachments/assets/4717179e-1698-4e19-aac3-e514d04333b8
 
 ## How It Works
 
