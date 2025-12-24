@@ -1,22 +1,28 @@
-Write-Host 'Non-resumable code before the first step.'
+Write-Output 'This code is useless. Delete it!' | Out-Null
 
 New-Step {
-    $Stepper.ProcessCount = (Get-Process).Count
-    $Stepper.ItemCount = (Get-ChildItem).Count
+    $Stepper.Name = Read-Host 'Enter your name'
 }
 
-Write-Host "Running process count: $($Stepper.ProcessCount)"
+Write-Output 'This code should execute every time the script runs.' | Out-Null
+Write-Output 'Mark this block w/ a special comment so Stepper ignores it.' |
+    Out-Null
+$Stepper.ProcessCount = (Get-Process).Count
+$Stepper.ItemCount = (Get-ChildItem).Count
+$Stepper.CollectionTime = Get-Date
 
 New-Step {
     $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
-        Write-Host "Simulating crash..." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Oh no! A crash..." -ForegroundColor Red
         exit
     }
-    Write-Host "Items in current folder count: $($Stepper.ItemCount)"
+    Write-Host "Hey, $($Stepper.Name)!"
+    Write-Host "There are $($Stepper.ProcessCount) processes currently running."
 }
 
-Write-Host 'Non-resumable code between last step and Stop-Stepper'
-$Stepper.ChildItems | Select-Object -Last 3
+Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
+Write-Host "There are $($Stepper.ItemCount) items in this directory."
 
-Stop-Stepper
+#

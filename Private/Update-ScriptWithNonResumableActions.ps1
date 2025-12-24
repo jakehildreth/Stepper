@@ -157,6 +157,12 @@ function Update-ScriptWithNonResumableActions {
 
     # Write back to file
     $newScriptLines | Set-Content -Path $ScriptPath -Force
+
+    # Delete state file since script was modified
+    $statePath = Get-StepperStatePath -ScriptPath $ScriptPath
+    Remove-StepperState -StatePath $statePath
+
+    $scriptName = Split-Path $ScriptPath -Leaf
     Write-Host ""
-    Write-Host "Changes applied. Please re-run the script." -ForegroundColor Green
+    Write-Host "Changes applied to non-resumable code. Please re-run $scriptName." -ForegroundColor Green
 }

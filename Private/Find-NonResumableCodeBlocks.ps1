@@ -135,35 +135,34 @@ function Find-NonResumableCodeBlocks {
             }
         }
 
-        # Check between last New-Step and Stop-Stepper
-        if ($StopStepperLine -ge 0) {
-            $lastBlock = $NewStepBlocks[$NewStepBlocks.Count - 1]
-            $gapStart = $lastBlock.End + 1
-            $gapEnd = $StopStepperLine - 1
+        # Check between last New-Step and Stop-Stepper (or end of file if no Stop-Stepper)
+        $lastBlock = $NewStepBlocks[$NewStepBlocks.Count - 1]
+        $gapStart = $lastBlock.End + 1
+        # If Stop-Stepper exists, check up to it; otherwise check to end of file
+        $gapEnd = if ($StopStepperLine -ge 0) { $StopStepperLine - 1 } else { $ScriptLines.Count - 1 }
 
-            $blockLines = @()
-            for ($j = $gapStart; $j -le $gapEnd; $j++) {
-                # Skip if line is in an ignored region
-                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
-                    continue
-                }
-
-                # Skip if line is in a multi-line comment block
-                if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $commentBlocks) {
-                    continue
-                }
-
-                $line = $ScriptLines[$j].Trim()
-                if ($line -and $line -notmatch '^\s*#') {
-                    $blockLines += $j
-                }
+        $blockLines = @()
+        for ($j = $gapStart; $j -le $gapEnd; $j++) {
+            # Skip if line is in an ignored region
+            if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
+                continue
             }
 
-            if ($blockLines.Count -gt 0) {
-                $nonResumableBlocks += @{
-                    Lines = $blockLines
-                    IsBeforeStop = $true
-                }
+            # Skip if line is in a multi-line comment block
+            if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $commentBlocks) {
+                continue
+            }
+
+            $line = $ScriptLines[$j].Trim()
+            if ($line -and $line -notmatch '^\s*#') {
+                $blockLines += $j
+            }
+        }
+
+        if ($blockLines.Count -gt 0) {
+            $nonResumableBlocks += @{
+                Lines = $blockLines
+                IsBeforeStop = ($StopStepperLine -ge 0)
             }
         }
     }
