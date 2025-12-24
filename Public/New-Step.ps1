@@ -276,7 +276,8 @@ function New-Step {
                         break
                     }
                     elseif ($response -eq 'R' -or $response -eq 'r') {
-                        Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                        Write-Host ""
+                        Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
                         $executionState.RestoreMode = $true
                         $executionState.TargetStep = $lastStep
                         break
@@ -299,7 +300,8 @@ function New-Step {
                             break
                         }
                         elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
-                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host ""
+                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
@@ -392,7 +394,8 @@ function New-Step {
                         $response = Read-Host
 
                         if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
-                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host ""
+                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
@@ -420,7 +423,8 @@ function New-Step {
                                 break
                             }
                             elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
-                                Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                                Write-Host ""
+                                Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
                                 $executionState.RestoreMode = $true
                                 $executionState.TargetStep = $lastStep
                                 break
@@ -448,7 +452,8 @@ function New-Step {
                         }
                         else {
                             # Default to Resume for invalid input
-                            Write-Host "Resuming from step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host ""
+                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
@@ -486,9 +491,7 @@ function New-Step {
             $shouldExecute = $false
         }
         elseif ($executionState.RestoreMode) {
-            # Still skipping — match other UI style (no timestamp, short marker)
-            Write-Host ""
-            Write-Host "  [S] Skipping $displayStepId" -ForegroundColor DarkGray
+            # Still skipping
             $shouldExecute = $false
         }
     }
