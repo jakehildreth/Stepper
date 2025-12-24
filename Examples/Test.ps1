@@ -14,11 +14,13 @@ $Stepper.CollectionTime = Get-Date
 New-Step {
     $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
-        Write-Host "`nOh no! A crash..." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Oh no! A crash..." -ForegroundColor Red
         exit
     }
     Write-Host "Processes currently running: $($Stepper.ItemCount)"
 }
 
 Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
-Write-Host "There are $($Stepper.ItemCount) items in this directory"
+Write-Host "Hey, $($Stepper.Name)!"
+Write-Host "There are $($Stepper.ItemCount) items in this directory."
