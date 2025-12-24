@@ -18,7 +18,7 @@ New-Step {
         Write-Host "Oh no! A crash..." -ForegroundColor Red
         exit
     }
-    Write-Host "Processes currently running: $($Stepper.ItemCount)"
+    Write-Host "Processes currently running: $($Stepper.ProcessCount)"
 }
 
 Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
