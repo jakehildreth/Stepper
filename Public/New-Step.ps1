@@ -85,71 +85,6 @@ function New-Step {
 
     # Initialize execution state on first step
     if ($isFirstStep) {
-        # Verify the script contains Stop-Stepper
-        $scriptContent = Get-Content -Path $scriptPath -Raw
-        if ($scriptContent -notmatch 'Stop-Stepper') {
-            $scriptName = Split-Path $scriptPath -Leaf
-            Write-Host ""
-            Write-Host "[!] Script '$scriptName' does not call Stop-Stepper." -ForegroundColor Magenta
-            Write-Host ""
-            Write-Host "Stop-Stepper ensures the state file is removed when the script completes successfully."
-            Write-Host ""
-            Write-Host "How would you like to proceed?"
-            Write-Host ""
-            Write-Host "  [A] Add 'Stop-Stepper' to the end of the script (Default)" -ForegroundColor Cyan
-            Write-Host "  [C] Continue without Stop-Stepper" -ForegroundColor White
-            Write-Host "  [Q] Quit" -ForegroundColor White
-            Write-Host ""
-            Write-Host "Choice? [" -NoNewline
-            Write-Host "A" -NoNewline -ForegroundColor Cyan
-            Write-Host "/c/q]: " -NoNewline
-            $response = Read-Host
-
-            if ($response -eq '' -or $response -eq 'A' -or $response -eq 'a') {
-                Write-Host "Adding 'Stop-Stepper' to the end of the script..." -ForegroundColor Yellow
-
-                # Add Stop-Stepper to the end of the script
-                $updatedContent = $scriptContent.TrimEnd()
-                if (-not $updatedContent.EndsWith("`n")) {
-                    $updatedContent += "`n"
-                }
-                $updatedContent += "`nStop-Stepper`n"
-
-                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
-
-                Write-Host "Stop-Stepper added. Please run the script again." -ForegroundColor Green
-
-                # Exit this execution - the script will need to be run again
-                exit
-            }
-            elseif ($response -eq 'C' -or $response -eq 'c') {
-                Write-Warning "Continuing without Stop-Stepper. State file will not be cleaned up automatically."
-            }
-            elseif ($response -eq 'Q' -or $response -eq 'q') {
-                Write-Host ""
-                Write-Host "Exiting..." -ForegroundColor Yellow
-                exit
-            }
-            else {
-                # Default to Add for invalid input
-                Write-Host "Adding 'Stop-Stepper' to the end of the script..." -ForegroundColor Yellow
-
-                # Add Stop-Stepper to the end of the script
-                $updatedContent = $scriptContent.TrimEnd()
-                if (-not $updatedContent.EndsWith("`n")) {
-                    $updatedContent += "`n"
-                }
-                $updatedContent += "`nStop-Stepper`n"
-
-                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
-
-                Write-Host "Stop-Stepper added. Please run the script again." -ForegroundColor Green
-
-                # Exit this execution - the script will need to be run again
-                exit
-            }
-        }
-
         # Store execution state in calling scope
         $executionState = @{
             RestoreMode       = $false
@@ -160,7 +95,7 @@ function New-Step {
         }
         $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
-        # Check script requirements
+        # Check script requirements (declarations) first
         $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
         if ($requirementsModified) {
             exit
@@ -200,6 +135,67 @@ function New-Step {
             # Apply all the changes
             if ($allLinesToRemove.Count -gt 0) {
                 Update-ScriptWithNonResumableActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
+                exit
+            }
+        }
+
+        # Verify the script contains Stop-Stepper (last check)
+        $scriptContent = Get-Content -Path $scriptPath -Raw
+        if ($scriptContent -notmatch 'Stop-Stepper') {
+            $scriptName = Split-Path $scriptPath -Leaf
+            Write-Host ""
+            Write-Host "[!] Script '$scriptName' does not call Stop-Stepper." -ForegroundColor Magenta
+            Write-Host ""
+            Write-Host "Stop-Stepper ensures the state file is removed when the script completes successfully."
+            Write-Host ""
+            Write-Host "How would you like to proceed?"
+            Write-Host ""
+            Write-Host "  [A] Add 'Stop-Stepper' to the end of the script (Default)" -ForegroundColor Cyan
+            Write-Host "  [C] Continue without Stop-Stepper" -ForegroundColor White
+            Write-Host "  [Q] Quit" -ForegroundColor White
+            Write-Host ""
+            Write-Host "Choice? [" -NoNewline
+            Write-Host "A" -NoNewline -ForegroundColor Cyan
+            Write-Host "/c/q]: " -NoNewline
+            $response = Read-Host
+
+            if ($response -eq '' -or $response -eq 'A' -or $response -eq 'a') {
+                # Add Stop-Stepper to the end of the script
+                $updatedContent = $scriptContent.TrimEnd()
+                if (-not $updatedContent.EndsWith("`n")) {
+                    $updatedContent += "`n"
+                }
+                $updatedContent += "`nStop-Stepper`n"
+
+                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+                Write-Host ""
+                Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
+
+                # Exit this execution - the script will need to be run again
+                exit
+            }
+            elseif ($response -eq 'C' -or $response -eq 'c') {
+                Write-Warning "Continuing without Stop-Stepper. State file will not be cleaned up automatically."
+            }
+            elseif ($response -eq 'Q' -or $response -eq 'q') {
+                Write-Host ""
+                Write-Host "Exiting..." -ForegroundColor Yellow
+                exit
+            }
+            else {
+                # Default to Add for invalid input
+                # Add Stop-Stepper to the end of the script
+                $updatedContent = $scriptContent.TrimEnd()
+                if (-not $updatedContent.EndsWith("`n")) {
+                    $updatedContent += "`n"
+                }
+                $updatedContent += "`nStop-Stepper`n"
+
+                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+                Write-Host ""
+                Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
+
+                # Exit this execution - the script will need to be run again
                 exit
             }
         }

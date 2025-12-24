@@ -107,7 +107,7 @@ function Test-StepperScriptRequirements {
             # Write back to file
             $newScriptLines | Set-Content -Path $ScriptPath -Force
             Write-Host ""
-            Write-Host "Declarations added to $scriptName. Please re-run the script." -ForegroundColor Green
+            Write-Host "Declarations added. Please re-run $scriptName." -ForegroundColor Green
             return $true
         }
     }
