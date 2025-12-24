@@ -23,7 +23,7 @@ New-Step {
         Write-Host "Oh no! A crash..." -ForegroundColor Red
         exit
     }
-    Write-Host "Processes currently running: $($Stepper.ProcessCount)"
+    Write-Host "There are $($Stepper.ProcessCount) processes currently running."
 }
 
 #
