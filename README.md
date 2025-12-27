@@ -1,4 +1,4 @@
-﻿# Stepper
+﻿![The Stepper logo features the word Stepper in a bold, stylized font with a set of stairs ascending diagonally to the right. The design conveys a sense of progress and upward movement, aligning with the tool's purpose of step-by-step automation. The background is plain, ensuring the logo remains the focal point.](Images/Stepper.png)
 
 A PowerShell utility module for creating resumable scripts with automatic state persistence.
 
