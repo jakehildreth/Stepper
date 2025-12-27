@@ -8,6 +8,8 @@ A PowerShell utility module for creating resumable, step-by-step scripts with au
 
 https://github.com/user-attachments/assets/4717179e-1698-4e19-aac3-e514d04333b8
 
+Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://charm.land).
+
 ## How It Works
 
 - Each step is tracked by its location in the script (file:line)
