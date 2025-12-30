@@ -48,10 +48,28 @@ function New-Step {
     }
 
     # Get step identifier and script info
-    $stepId = Get-StepIdentifier
+    try {
+        $stepId = Get-StepIdentifier
+    }
+    catch {
+        throw "Stepper cannot determine the step identifier. Ensure New-Step is called from a script file and not from the console or an unsaved file."
+    }
     # Extract script path from identifier (format: "path:line")
     $lastColonIndex = $stepId.LastIndexOf(':')
     $scriptPath = $stepId.Substring(0, $lastColonIndex)
+    
+    #Region Check if this is an unsaved file
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($scriptPath)
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            throw "Stepper cannot be used with unsaved files. Please save the script first."
+        }
+    }
+    catch {
+        throw "Stepper cannot be used with unsaved files. Please save the script first."
+    }
+    #EndRegion Check if this is an unsaved file
+    
     $currentHash = Get-ScriptHash -ScriptPath $scriptPath
     $statePath = Get-StepperStatePath -ScriptPath $scriptPath
 
