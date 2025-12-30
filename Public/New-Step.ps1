@@ -48,7 +48,12 @@ function New-Step {
     }
 
     # Get step identifier and script info
-    $stepId = Get-StepIdentifier
+    try {
+        $stepId = Get-StepIdentifier
+    }
+    catch {
+        throw "Stepper cannot determine the step identifier. Ensure New-Step is called from a script file and not from the console or an unsaved file."
+    }
     # Extract script path from identifier (format: "path:line")
     $lastColonIndex = $stepId.LastIndexOf(':')
     $scriptPath = $stepId.Substring(0, $lastColonIndex)
