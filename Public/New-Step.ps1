@@ -53,10 +53,17 @@ function New-Step {
     $lastColonIndex = $stepId.LastIndexOf(':')
     $scriptPath = $stepId.Substring(0, $lastColonIndex)
     
-    # Check if this is an unsaved file (URI scheme like untitled:)
-    if ($scriptPath -match '^[a-z][a-z0-9+.-]*:' -and $scriptPath -notmatch '^[a-z]:\\') {
+    #Region Check if this is an unsaved file
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($scriptPath)
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+            throw "Stepper cannot be used with unsaved files. Please save the script first."
+        }
+    }
+    catch {
         throw "Stepper cannot be used with unsaved files. Please save the script first."
     }
+    #EndRegion Check if this is an unsaved file
     
     $currentHash = Get-ScriptHash -ScriptPath $scriptPath
     $statePath = Get-StepperStatePath -ScriptPath $scriptPath
