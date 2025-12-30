@@ -68,4 +68,8 @@ New-Step {
 
 ## License
 
-MIT with Commons Clause - see [LICENSE](LICENSE)
+MIT License w/Commons Clause - see [LICENSE](LICENSE) file for details.
+
+---
+
+Made with 💜 by [Jake Hildreth](https://jakehildreth.com)
