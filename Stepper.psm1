@@ -1,4 +1,9 @@
-﻿# Get public and private function definition files.
+﻿# In Stepper.psm1 - more flexible
+if ($env:STEPPER_SHOW_LOGO -ne 'false') {
+    . $PSScriptRoot\Private\Show-Logo.ps1
+}
+
+# Get public and private function definition files.
 $Public = @( Get-ChildItem -Path $PSScriptRoot\Public\*.ps1 -ErrorAction SilentlyContinue -Recurse )
 $Private = @( Get-ChildItem -Path $PSScriptRoot\Private\*.ps1 -ErrorAction SilentlyContinue -Recurse )
 $Classes = @( Get-ChildItem -Path $PSScriptRoot\Classes\*.ps1 -ErrorAction SilentlyContinue -Recurse )
