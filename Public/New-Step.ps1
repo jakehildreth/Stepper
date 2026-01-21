@@ -244,7 +244,7 @@ function New-Step {
             if ($existingState.ScriptHash -ne $currentHash) {
                 # Script has been modified since last run — prompt user for action
                 $scriptContent = Get-Content -Path $scriptPath -Raw
-                $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
                 # Find all step line numbers
@@ -252,7 +252,7 @@ function New-Step {
                 $lineNumber = 1
                 $lines = $scriptContent -split "`r?`n"
                 foreach ($line in $lines) {
-                    if ($line -match '^\s*New-Step\s+\{') {
+                    if ($line -match '(?i)^\s*New-Step\s+\{') {
                         $stepLines += "${scriptPath}:${lineNumber}"
                     }
                     $lineNumber++
@@ -364,14 +364,14 @@ function New-Step {
             else {
                 # Count total steps in the script by finding all New-Step calls
                 $scriptContent = Get-Content -Path $scriptPath -Raw
-                $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
                 # Find all step line numbers to determine which step number we're on
                 $stepLines = @()
                 $lineNumber = 1
                 foreach ($line in (Get-Content -Path $scriptPath)) {
-                    if ($line -match '^\s*New-Step\s+\{') {
+                    if ($line -match '(?i)^\s*New-Step\s+\{') {
                         $stepLines += "${scriptPath}:${lineNumber}"
                     }
                     $lineNumber++
@@ -531,14 +531,14 @@ function New-Step {
 
         # Calculate step number (X/Y)
         $scriptContent = Get-Content -Path $scriptPath -Raw
-        $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         $totalSteps = $stepMatches.Count
 
         # Find all step line numbers
         $stepLines = @()
         $lineNumber = 1
         foreach ($line in (Get-Content -Path $scriptPath)) {
-            if ($line -match '^\s*New-Step\s+\{') {
+            if ($line -match '(?i)^\s*New-Step\s+\{') {
                 $stepLines += "${scriptPath}:${lineNumber}"
             }
             $lineNumber++
