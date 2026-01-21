@@ -38,16 +38,22 @@ function New-Step {
     )
 
     # Inherit verbose preference by walking the call stack
+    # This technique allows -Verbose to propagate from the parent script
+    # without requiring it as an explicit parameter on New-Step calls
     $callStack = Get-PSCallStack
     foreach ($frame in $callStack) {
+        # Check if any caller in the stack has -Verbose enabled
         if ($frame.InvocationInfo.BoundParameters.ContainsKey('Verbose') -and
             $frame.InvocationInfo.BoundParameters['Verbose']) {
+            # Enable verbose output for this function and all subsequent calls
             $VerbosePreference = 'Continue'
             break
         }
     }
 
     # Get step identifier and script info
+    # Each step is uniquely identified by its file location (path:line)
+    # This allows Stepper to track which steps have been completed
     try {
         $stepId = Get-StepIdentifier
     }
@@ -55,6 +61,7 @@ function New-Step {
         throw "Stepper cannot determine the step identifier. Ensure New-Step is called from a script file and not from the console or an unsaved file."
     }
     # Extract script path from identifier (format: "path:line")
+    # Example: "C:\Scripts\deploy.ps1:42" becomes "C:\Scripts\deploy.ps1"
     $lastColonIndex = $stepId.LastIndexOf(':')
     $scriptPath = $stepId.Substring(0, $lastColonIndex)
     
@@ -70,40 +77,55 @@ function New-Step {
     }
     #EndRegion Check if this is an unsaved file
     
+    # Calculate SHA256 hash of the script file content
+    # This detects if the script has been modified since the last run
     $currentHash = Get-ScriptHash -ScriptPath $scriptPath
+    
+    # Get the path where state will be saved (script.ps1 -> script.ps1.stepper)
     $statePath = Get-StepperStatePath -ScriptPath $scriptPath
 
     # Initialize $Stepper hashtable in calling script scope if it doesn't exist
+    # This allows users to share data between steps using $Stepper.VariableName
+    # We use $PSCmdlet.SessionState to access the caller's scope, not our own
     $callingScope = $PSCmdlet.SessionState
     try {
         $existingStepper = $callingScope.PSVariable.Get('Stepper')
         if (-not $existingStepper) {
+            # Create an empty hashtable in the caller's scope
             $callingScope.PSVariable.Set('Stepper', @{})
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
         }
     } catch {
+        # If Get fails (variable doesn't exist), initialize it
         $callingScope.PSVariable.Set('Stepper', @{})
         Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
     }
 
     # Check if this is the first step of this script execution
     # We use a variable in the calling scope to track initialization per execution
+    # This ensures one-time setup only happens once, even if multiple steps execute
     $initVarName = '__StepperInitialized'
     $isFirstStep = $false
     try {
         $initVar = $callingScope.PSVariable.Get($initVarName)
         if (-not $initVar -or -not $initVar.Value) {
+            # This is the first step, mark initialization as complete
             $isFirstStep = $true
             $callingScope.PSVariable.Set($initVarName, $true)
         }
     } catch {
+        # Variable doesn't exist yet, so this must be the first step
         $isFirstStep = $true
         $callingScope.PSVariable.Set($initVarName, $true)
     }
 
     # Initialize execution state on first step
+    # This setup code only runs once per script execution, not for every step
     if ($isFirstStep) {
         # Store execution state in calling scope
+        # This state is shared across all New-Step calls in this execution
+        # RestoreMode: Whether we're skipping steps to resume from a previous run
+        # TargetStep: The last completed step we're trying to reach (then resume after)
         $executionState = @{
             RestoreMode       = $false
             TargetStep        = $null
@@ -114,26 +136,34 @@ function New-Step {
         $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
         # Check script requirements (declarations) first
+        # Ensures the script has proper #Requires statements for modules
         $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
         if ($requirementsModified) {
+            # Script was modified to add requirements, must restart
             exit
         }
 
         # Check for non-resumable code between New-Step blocks and before Stop-Stepper
+        # Non-resumable code is code that would execute every time, even when resuming
+        # Examples: variable assignments, function calls outside of New-Step blocks
         $scriptLines = Get-Content -Path $scriptPath
 
+        # Find all New-Step blocks and Stop-Stepper location in the script
         $blockInfo = Find-NewStepBlocks -ScriptLines $scriptLines
         $newStepBlocks = $blockInfo.NewStepBlocks
         $stopStepperLine = $blockInfo.StopStepperLine
 
+        # Identify code that would execute on every run (not inside New-Step)
         $nonResumableBlocks = Find-NonResumableCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
 
         # Process each non-resumable block individually
+        # Give user options to wrap it in New-Step, add ignore region, or remove it
         if ($nonResumableBlocks.Count -gt 0) {
             $scriptName = Split-Path $scriptPath -Leaf
             $allLinesToRemove = @{}
 
             foreach ($block in $nonResumableBlocks) {
+                # Prompt user for action on this specific block
                 $action = Get-NonResumableCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
 
                 if ($action -eq 'Quit') {
@@ -226,11 +256,15 @@ function New-Step {
             }
         }
 
+        # Read existing state file if it exists
+        # State contains: script hash, last completed step, timestamp, and $Stepper data
         $existingState = Read-StepperState -StatePath $statePath
 
         # Try to load persisted $Stepper data from state
+        # This restores variables saved from the previous incomplete run
         if ($existingState -and $existingState.StepperData) {
             try {
+                # Restore the $Stepper hashtable in the caller's scope
                 $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
                 $variableNames = ($existingState.StepperData.Keys | Sort-Object) -join ', '
                 Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk ($variableNames)"
@@ -240,10 +274,13 @@ function New-Step {
         }
 
         if ($existingState) {
-            # Check if script has been modified
+            # Check if script has been modified since the state was saved
+            # If hashes don't match, the script has changed and may not be safe to resume
             if ($existingState.ScriptHash -ne $currentHash) {
                 # Script has been modified since last run — prompt user for action
+                # User can choose to resume anyway (risky) or start over (safe)
                 $scriptContent = Get-Content -Path $scriptPath -Raw
+                # Count total New-Step blocks using regex
                 $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
@@ -495,9 +532,11 @@ function New-Step {
     }
 
     # Determine if we should execute this step
+    # By default, execute every step unless we're in restore mode
     $shouldExecute = $true
 
     # Get execution state from calling scope
+    # This state tracks whether we're skipping steps during a resume
     try {
         $executionState = $callingScope.PSVariable.Get('__StepperExecutionState').Value
     } catch {
@@ -506,35 +545,41 @@ function New-Step {
 
     if ($executionState -and $executionState.RestoreMode) {
         # Format step identifier for display messages
+        # Convert full path to just filename for cleaner output
         $stepIdParts = $stepId -split ':'
         $scriptName = Split-Path $stepIdParts[0] -Leaf
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
 
         # In restore mode: skip steps until we reach the target
+        # TargetStep is the last step that completed successfully
         if ($stepId -eq $executionState.TargetStep) {
             # This is the last completed step, skip it and disable restore mode
+            # The next step will execute normally
             $executionState.RestoreMode = $false
             $shouldExecute = $false
         }
         elseif ($executionState.RestoreMode) {
-            # Still skipping
+            # Still skipping earlier steps that already completed
             $shouldExecute = $false
         }
     }
 
     # Execute the step if needed
+    # Either this is a fresh run or we've finished skipping completed steps
     if ($shouldExecute) {
         # Format step identifier for display (scriptname:line instead of full path)
+        # Makes verbose output more readable
         $stepIdParts = $stepId -split ':'
         $scriptName = Split-Path $stepIdParts[0] -Leaf
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
 
-        # Calculate step number (X/Y)
+        # Calculate step number (X/Y) for progress indication
+        # Count total New-Step blocks in the script
         $scriptContent = Get-Content -Path $scriptPath -Raw
         $stepMatches = [regex]::Matches($scriptContent, '^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         $totalSteps = $stepMatches.Count
 
-        # Find all step line numbers
+        # Find all step line numbers to determine current step position
         $stepLines = @()
         $lineNumber = 1
         foreach ($line in (Get-Content -Path $scriptPath)) {
@@ -543,11 +588,13 @@ function New-Step {
             }
             $lineNumber++
         }
+        # Find the current step's position in the list (1-based index)
         $currentStepNumber = $stepLines.IndexOf($stepId) + 1
 
         Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step $currentStepNumber/$totalSteps ($displayStepId)"
 
-        # Show current $Stepper data
+        # Show current $Stepper data available to this step
+        # Helps with debugging to see what variables are accessible
         try {
             $stepperData = $callingScope.PSVariable.Get('Stepper').Value
             if ($stepperData -and $stepperData.Count -gt 0) {
@@ -555,15 +602,19 @@ function New-Step {
                 Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Available `$Stepper data ($variableNames)"
             }
         } catch {
-            # Ignore if unable to read $Stepper
+            # Ignore if unable to read $Stepper (shouldn't happen)
         }
 
         try {
+            # Execute the user's script block using the call operator (&)
+            # This runs the code inside New-Step { ... }
             & $ScriptBlock
 
             # Update state file after successful execution (including $Stepper data)
+            # Save current state so we can resume from here if script fails later
             $stepperData = $callingScope.PSVariable.Get('Stepper').Value
             # Persist state including the script contents for better change inspection
+            # Script contents help detect modifications when resuming
             $scriptContents = Get-Content -Path $scriptPath -Raw
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData -ScriptContents $scriptContents
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
