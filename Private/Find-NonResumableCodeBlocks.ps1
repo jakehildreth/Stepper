@@ -29,18 +29,22 @@ function Find-NonResumableCodeBlocks {
         [int]$StopStepperLine
     )
 
+    # Collection to hold all non-resumable code blocks found
     $nonResumableBlocks = @()
 
-    # Find all Stepper ignore regions
+    # Find all Stepper ignore regions (marked by #region Stepper ignore)
+    # These regions contain code that should execute every time, even when resuming
     $ignoredRegions = @()
     $inIgnoreRegion = $false
     $regionStart = -1
     for ($i = 0; $i -lt $ScriptLines.Count; $i++) {
         $line = $ScriptLines[$i].Trim()
+        # Found start of an ignore region
         if ($line -match '^\s*#region\s+Stepper\s+ignore') {
             $inIgnoreRegion = $true
             $regionStart = $i
         }
+        # Found end of an ignore region
         elseif ($line -match '^\s*#endregion\s+Stepper\s+ignore' -and $inIgnoreRegion) {
             $ignoredRegions += @{
                 Start = $regionStart
@@ -50,16 +54,19 @@ function Find-NonResumableCodeBlocks {
         }
     }
 
-    # Find all multi-line comment blocks
+    # Find all multi-line comment blocks (<# ... #>)
+    # Comments shouldn't be flagged as non-resumable code
     $commentBlocks = @()
     $inCommentBlock = $false
     $commentStart = -1
     for ($i = 0; $i -lt $ScriptLines.Count; $i++) {
         $line = $ScriptLines[$i]
+        # Start of a multi-line comment
         if (-not $inCommentBlock -and $line -match '<#') {
             $inCommentBlock = $true
             $commentStart = $i
         }
+        # End of a multi-line comment
         if ($inCommentBlock -and $line -match '#>') {
             $commentBlocks += @{
                 Start = $commentStart
@@ -71,10 +78,11 @@ function Find-NonResumableCodeBlocks {
 
     if ($NewStepBlocks.Count -gt 0) {
         # Check code BEFORE the first New-Step block
+        # This code will execute on every run, even when resuming
         $firstBlock = $NewStepBlocks[0]
         $blockLines = @()
         for ($j = 0; $j -lt $firstBlock.Start; $j++) {
-            # Skip if line is in an ignored region
+            # Skip if line is in an ignored region (user explicitly marked it as OK)
             if (Test-LineInIgnoredRegion -LineIndex $j -IgnoredRegions $ignoredRegions) {
                 continue
             }
@@ -86,13 +94,15 @@ function Find-NonResumableCodeBlocks {
 
             $line = $ScriptLines[$j].Trim()
             # Skip comments, empty lines, and common non-executable statements
+            # These are declarations/setup that are safe to execute multiple times
             if ($line -and
-                $line -notmatch '^\s*#' -and
-                $line -notmatch '^\s*\[CmdletBinding\(' -and
-                $line -notmatch '^\s*param\s*\(' -and
-                $line -notmatch '^\s*using\s+(namespace|module|assembly)' -and
-                $line -notmatch '^\s*\)\s*$' -and
-                $line -ne '.') {
+                $line -notmatch '^\s*#' -and                 # Single-line comments
+                $line -notmatch '^\s*\[CmdletBinding\(' -and  # [CmdletBinding()] attribute
+                $line -notmatch '^\s*param\s*\(' -and         # param() block
+                $line -notmatch '^\s*using\s+(namespace|module|assembly)' -and  # using statements
+                $line -notmatch '^\s*\)\s*$' -and             # Closing parenthesis
+                $line -ne '.') {                              # Dot sourcing operator
+                # This line is potentially non-resumable code
                 $blockLines += $j
             }
         }
