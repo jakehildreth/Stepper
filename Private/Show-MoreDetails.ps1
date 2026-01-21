@@ -31,22 +31,28 @@ function Show-MoreDetails {
         [switch]$ShowHashComparison
     )
 
+    # Display detailed information section header
     Write-Host ""
     Write-Host "More details:" -ForegroundColor Yellow
     Write-Host ""
+    
+    # Show script hash comparison if requested (when script has been modified)
     if ($ShowHashComparison) {
         Write-Host "  Previous script hash: $($ExistingState.ScriptHash)"
     }
     Write-Host "  Current script hash: $CurrentHash"
 
     # Show Stepper variables and their contents
+    # These are the values that will be restored when resuming
     Write-Host ""
     Write-Host "Stepper variables:"
     Write-Host ""
     if ($ExistingState.StepperData -and $ExistingState.StepperData.Count -gt 0) {
+        # Display each variable and its value as JSON for readability
         foreach ($var in ($ExistingState.StepperData.Keys | Sort-Object)) {
             $val = $ExistingState.StepperData[$var]
             try {
+                # Convert to JSON with depth 4 to show nested structures
                 $valStr = $val | ConvertTo-Json -Depth 4 -ErrorAction Stop
             } catch {
                 $valStr = ($val | Out-String).TrimEnd()

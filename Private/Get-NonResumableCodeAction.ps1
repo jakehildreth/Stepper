@@ -28,10 +28,17 @@ function Get-NonResumableCodeAction {
         [hashtable]$Block
     )
 
-    $blockLineNums = $Block.Lines | ForEach-Object { $_ + 1 }  # Convert to 1-based
+    # Convert zero-based line indices to 1-based line numbers for display
+    $blockLineNums = $Block.Lines | ForEach-Object { $_ + 1 }  
+    
+    # Get the actual code from those lines and trim whitespace
     $blockCode = $Block.Lines | ForEach-Object { $ScriptLines[$_].Trim() }
+    
+    # Check if this code block references $Stepper variables
+    # If it does, wrapping in New-Step might be appropriate
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
+    # Display warning to user about the non-resumable code found
     Write-Host ""
     Write-Host "[!] Non-resumable code detected in ${ScriptName}." -ForegroundColor Magenta
     Write-Host "    This code will execute on every run of this script," -ForegroundColor Magenta

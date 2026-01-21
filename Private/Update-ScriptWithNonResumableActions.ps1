@@ -32,18 +32,24 @@ function Update-ScriptWithNonResumableActions {
         [object[]]$NewStepBlocks
     )
 
+    # Initialize array for the new modified script content
     $newScriptLines = @()
+    # Track lines that need to be moved inside New-Step blocks
     $linesToMove = @()
 
     # Group lines to wrap by consecutive sequences
+    # This ensures adjacent lines get wrapped together in the same New-Step block
     $linesToWrap = @($Actions.Keys | Where-Object { $Actions[$_].Action -eq 'Wrap' } | Sort-Object)
     $wrapGroups = @()
     if ($linesToWrap.Count -gt 0) {
+        # Start the first group with the first line
         $currentGroup = @($linesToWrap[0])
         for ($i = 1; $i -lt $linesToWrap.Count; $i++) {
+            # If this line is consecutive with the previous, add to current group
             if ($linesToWrap[$i] -eq $linesToWrap[$i - 1] + 1) {
                 $currentGroup += $linesToWrap[$i]
             } else {
+                # Non-consecutive: save current group and start a new one
                 $wrapGroups += ,@($currentGroup)
                 $currentGroup = @($linesToWrap[$i])
             }
