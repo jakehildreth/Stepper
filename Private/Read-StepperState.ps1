@@ -19,14 +19,21 @@ function Read-StepperState {
         [string]$StatePath
     )
 
+    # Check if state file exists before trying to read it
+    # State file is only created after the first step completes successfully
     if (-not (Test-Path -Path $StatePath)) {
         return $null
     }
 
     try {
+        # Import-Clixml deserializes PowerShell objects saved with Export-Clixml
+        # This preserves complex data types like hashtables and custom objects
+        # State contains: script hash, last completed step, timestamp, and $Stepper data
         Import-Clixml -Path $StatePath -ErrorAction Stop
     }
     catch {
+        # If state file is corrupted or unreadable, warn and return null
+        # This allows the script to start fresh instead of failing
         Write-Warning "Failed to read state file '$StatePath': $_"
         return $null
     }

@@ -19,9 +19,17 @@ function Get-StepperStatePath {
         [string]$ScriptPath
     )
     
+    # Extract the directory where the script is located
     $scriptDir = Split-Path -Path $ScriptPath -Parent
+    
+    # Extract just the filename (e.g., "deploy.ps1")
     $scriptName = Split-Path -Path $ScriptPath -Leaf
+    
+    # Create state filename by appending .stepper extension
+    # Example: "deploy.ps1" becomes "deploy.ps1.stepper"
+    # Kept in same directory as script for easy discovery
     $stateFileName = "$scriptName.stepper"
     
+    # Combine directory and filename to get full path
     Join-Path -Path $scriptDir -ChildPath $stateFileName
 }
