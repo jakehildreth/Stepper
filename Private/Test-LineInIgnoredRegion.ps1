@@ -22,10 +22,14 @@ function Test-LineInIgnoredRegion {
         [array]$IgnoredRegions
     )
 
+    # Check if the line falls within any ignored region
+    # Ignored regions are marked with #region Stepper ignore / #endregion Stepper ignore
     foreach ($region in $IgnoredRegions) {
+        # Use zero-based indexing to check if line is within region boundaries
         if ($LineIndex -ge $region.Start -and $LineIndex -le $region.End) {
             return $true
         }
     }
+    # Line is not in any ignored region
     return $false
 }
