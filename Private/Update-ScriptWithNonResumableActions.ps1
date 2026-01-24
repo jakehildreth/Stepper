@@ -156,7 +156,19 @@ function Update-ScriptWithNonResumableActions {
     }
 
     # Write back to file
-    $newScriptLines | Set-Content -Path $ScriptPath -Force
+    try {
+        $newScriptLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
+    }
+    catch {
+        $exception = [System.IO.IOException]::new("Failed to write to script file '$ScriptPath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'ScriptWriteFailed',
+            [System.Management.Automation.ErrorCategory]::WriteError,
+            $ScriptPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
 
     # Delete state file since script was modified
     $statePath = Get-StepperStatePath -ScriptPath $ScriptPath

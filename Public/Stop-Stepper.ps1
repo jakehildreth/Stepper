@@ -68,6 +68,13 @@ function Stop-Stepper {
         Write-Warning "Unable to determine calling script from call stack"
     }
     catch {
-        Write-Error "Failed to clear Stepper state: $_"
+        $exception = [System.Exception]::new('Failed to clear Stepper state', $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'StateClearFailed',
+            [System.Management.Automation.ErrorCategory]::WriteError,
+            $statePath
+        )
+        $PSCmdlet.WriteError($errorRecord)
     }
 }

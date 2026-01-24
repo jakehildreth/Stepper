@@ -59,7 +59,14 @@ function Get-NonResumableCodeAction {
     Write-Host "Choice? [" -NoNewline
     Write-Host "W" -NoNewline -ForegroundColor Cyan
     Write-Host "/m/d/i/q]: " -NoNewline
-    $choice = Read-Host
+    try {
+        $choice = Read-Host
+    }
+    catch {
+        # Non-interactive context - default to Wrap (safest option)
+        $choice = 'w'
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Wrap"
+    }
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }

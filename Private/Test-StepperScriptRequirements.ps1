@@ -15,7 +15,19 @@ function Test-StepperScriptRequirements {
         [string]$ScriptPath
     )
 
-    $scriptLines = Get-Content -Path $ScriptPath
+    try {
+        $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop
+    }
+    catch {
+        $exception = [System.IO.IOException]::new("Failed to read script file '$ScriptPath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'ScriptReadFailed',
+            [System.Management.Automation.ErrorCategory]::ReadError,
+            $ScriptPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
     $scriptName = Split-Path $ScriptPath -Leaf
 
     # Check for CmdletBinding
@@ -49,7 +61,14 @@ function Test-StepperScriptRequirements {
         Write-Host "Choice? [" -NoNewline
         Write-Host "A" -NoNewline -ForegroundColor Cyan
         Write-Host "/s/q]: " -NoNewline
-        $response = Read-Host
+        try {
+            $response = Read-Host
+        }
+        catch {
+            # Non-interactive context - default to Add (safer for automation)
+            $response = 'a'
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Add"
+        }
 
         if ($response -eq 'Q' -or $response -eq 'q') {
             Write-Host ""
@@ -105,7 +124,19 @@ function Test-StepperScriptRequirements {
             }
 
             # Write back to file
-            $newScriptLines | Set-Content -Path $ScriptPath -Force
+            try {
+                $newScriptLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
+            }
+            catch {
+                $exception = [System.IO.IOException]::new("Failed to write to script file '$ScriptPath'", $_.Exception)
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'ScriptWriteFailed',
+                    [System.Management.Automation.ErrorCategory]::WriteError,
+                    $ScriptPath
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
+            }
 
             # Delete state file since script was modified
             $statePath = Get-StepperStatePath -ScriptPath $ScriptPath

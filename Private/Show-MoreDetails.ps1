@@ -81,11 +81,25 @@ function Show-MoreDetails {
         $block = @()
         $tokens = $null
         $parseErrors = $null
-        $scriptAst = [System.Management.Automation.Language.Parser]::ParseInput(
-            $ExistingState.ScriptContents,
-            [ref]$tokens,
-            [ref]$parseErrors
-        )
+        try {
+            $scriptAst = [System.Management.Automation.Language.Parser]::ParseInput(
+                $ExistingState.ScriptContents,
+                [ref]$tokens,
+                [ref]$parseErrors
+            )
+        }
+        catch {
+            $exception = [System.Exception]::new('Failed to parse script content with PowerShell AST', $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ASTParsingFailed',
+                [System.Management.Automation.ErrorCategory]::ParserError,
+                $ExistingState.ScriptContents
+            )
+            $PSCmdlet.WriteError($errorRecord)
+            # Continue with fallback logic
+            $parseErrors = @('Parser exception')
+        }
 
         if (-not $parseErrors -or $parseErrors.Count -eq 0) {
             # Find the New-Step command that contains the previous step line, then get its script-block argument
@@ -204,7 +218,24 @@ function Show-MoreDetails {
     $end2 = $ns + 3
 
     # Read only as many lines as we need for context, instead of the entire file
-    $contextLines = Get-Content -Path $ScriptPath -TotalCount $end2
+    try {
+        $contextLines = Get-Content -Path $ScriptPath -TotalCount $end2 -ErrorAction Stop
+    }
+    catch {
+        $exception = [System.IO.IOException]::new("Failed to read script file '$ScriptPath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'ScriptReadFailed',
+            [System.Management.Automation.ErrorCategory]::ReadError,
+            $ScriptPath
+        )
+        $PSCmdlet.WriteError($errorRecord)
+        Write-Host "  Unable to display context lines." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "How would you like to proceed?"
+        Write-Host ""
+        return
+    }
     $lastLineToShow = [Math]::Min($end2, $contextLines.Count)
 
     for ($ln = $start2; $ln -le $lastLineToShow; $ln++) {
