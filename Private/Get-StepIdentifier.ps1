@@ -45,5 +45,12 @@ function Get-StepIdentifier {
         return "${scriptName}:${line}"
     }
 
-    throw "Unable to determine step identifier from call stack"
+    $exception = [System.InvalidOperationException]::new('Unable to determine step identifier from call stack')
+    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+        $exception,
+        'StepIdentifierNotDetermined',
+        [System.Management.Automation.ErrorCategory]::InvalidOperation,
+        $callStack
+    )
+    $PSCmdlet.ThrowTerminatingError($errorRecord)
 }

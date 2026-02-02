@@ -27,7 +27,14 @@ function Read-StepperState {
         Import-Clixml -Path $StatePath -ErrorAction Stop
     }
     catch {
-        Write-Warning "Failed to read state file '$StatePath': $_"
+        $exception = [System.IO.IOException]::new("Failed to read state file '$StatePath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'StateReadFailed',
+            [System.Management.Automation.ErrorCategory]::ReadError,
+            $StatePath
+        )
+        $PSCmdlet.WriteError($errorRecord)
         return $null
     }
 }

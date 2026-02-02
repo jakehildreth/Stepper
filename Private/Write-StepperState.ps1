@@ -54,6 +54,13 @@ function Write-StepperState {
         Export-Clixml -Path $StatePath -InputObject $state -ErrorAction Stop
     }
     catch {
-        Write-Warning "Failed to write state file '$StatePath': $_"
+        $exception = [System.IO.IOException]::new("Failed to write state file '$StatePath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'StateWriteFailed',
+            [System.Management.Automation.ErrorCategory]::WriteError,
+            $StatePath
+        )
+        $PSCmdlet.WriteError($errorRecord)
     }
 }

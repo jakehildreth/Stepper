@@ -52,7 +52,14 @@ function New-Step {
         $stepId = Get-StepIdentifier
     }
     catch {
-        throw "Stepper cannot determine the step identifier. Ensure New-Step is called from a script file and not from the console or an unsaved file."
+        $exception = [System.InvalidOperationException]::new('Stepper cannot determine the step identifier. Ensure New-Step is called from a script file and not from the console or an unsaved file.', $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'StepIdentifierNotFound',
+            [System.Management.Automation.ErrorCategory]::InvalidOperation,
+            $null
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
     }
     # Extract script path from identifier (format: "path:line")
     $lastColonIndex = $stepId.LastIndexOf(':')
@@ -62,11 +69,25 @@ function New-Step {
     try {
         $fullPath = [System.IO.Path]::GetFullPath($scriptPath)
         if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-            throw "Stepper cannot be used with unsaved files. Please save the script first."
+            $exception = [System.IO.FileNotFoundException]::new('Stepper cannot be used with unsaved files. Please save the script first.')
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'UnsavedScriptFile',
+                [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
+                $scriptPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
         }
     }
     catch {
-        throw "Stepper cannot be used with unsaved files. Please save the script first."
+        $exception = [System.IO.FileNotFoundException]::new('Stepper cannot be used with unsaved files. Please save the script first.', $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'UnsavedScriptFile',
+            [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
+            $scriptPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
     }
     #EndRegion Check if this is an unsaved file
     
@@ -120,7 +141,19 @@ function New-Step {
         }
 
         # Check for non-resumable code between New-Step blocks and before Stop-Stepper
-        $scriptLines = Get-Content -Path $scriptPath
+        try {
+            $scriptLines = Get-Content -Path $scriptPath -ErrorAction Stop
+        }
+        catch {
+            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ScriptReadFailed',
+                [System.Management.Automation.ErrorCategory]::ReadError,
+                $scriptPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
 
         $blockInfo = Find-NewStepBlocks -ScriptLines $scriptLines
         $newStepBlocks = $blockInfo.NewStepBlocks
@@ -158,7 +191,20 @@ function New-Step {
         }
 
         # Verify the script contains Stop-Stepper (last check)
-        $scriptContent = Get-Content -Path $scriptPath -Raw
+        try {
+            $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+        }
+        catch {
+            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ScriptReadFailed',
+                [System.Management.Automation.ErrorCategory]::ReadError,
+                $scriptPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+        
         if ($scriptContent -notmatch 'Stop-Stepper') {
             $scriptName = Split-Path $scriptPath -Leaf
             Write-Host ""
@@ -175,7 +221,14 @@ function New-Step {
             Write-Host "Choice? [" -NoNewline
             Write-Host "A" -NoNewline -ForegroundColor Cyan
             Write-Host "/c/q]: " -NoNewline
-            $response = Read-Host
+            try {
+                $response = Read-Host
+            }
+            catch {
+                # Non-interactive context - default to Continue
+                $response = 'c'
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Continue"
+            }
 
             if ($response -eq '' -or $response -eq 'A' -or $response -eq 'a') {
                 # Add Stop-Stepper to the end of the script
@@ -185,7 +238,19 @@ function New-Step {
                 }
                 $updatedContent += "`nStop-Stepper`n"
 
-                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+                try {
+                    Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to write to script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptWriteFailed',
+                        [System.Management.Automation.ErrorCategory]::WriteError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                }
 
                 # Delete state file since script was modified
                 Remove-StepperState -StatePath $statePath
@@ -213,7 +278,19 @@ function New-Step {
                 }
                 $updatedContent += "`nStop-Stepper`n"
 
-                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline
+                try {
+                    Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to write to script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptWriteFailed',
+                        [System.Management.Automation.ErrorCategory]::WriteError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                }
 
                 # Delete state file since script was modified
                 Remove-StepperState -StatePath $statePath
@@ -243,7 +320,19 @@ function New-Step {
             # Check if script has been modified
             if ($existingState.ScriptHash -ne $currentHash) {
                 # Script has been modified since last run — prompt user for action
-                $scriptContent = Get-Content -Path $scriptPath -Raw
+                try {
+                    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptReadFailed',
+                        [System.Management.Automation.ErrorCategory]::ReadError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                }
                 $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
@@ -294,7 +383,14 @@ function New-Step {
                     Write-Host "r" -NoNewline -ForegroundColor White
                     Write-Host "/S" -NoNewline -ForegroundColor Cyan
                     Write-Host "/m/q]: " -NoNewline
-                    $response = Read-Host
+                    try {
+                        $response = Read-Host
+                    }
+                    catch {
+                        # Non-interactive context - default to Start over (safer)
+                        $response = 's'
+                        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Start over"
+                    }
 
                     if ($response -eq '' -or $response -eq 'S' -or $response -eq 's') {
                         Write-Host "Starting fresh..." -ForegroundColor Yellow
@@ -318,7 +414,14 @@ function New-Step {
                         Write-Host "  [Q] Quit" -ForegroundColor White
                         Write-Host ""
                         Write-Host "Choice? [r/S/m/q]: " -NoNewline
-                        $moreResponse = Read-Host
+                        try {
+                            $moreResponse = Read-Host
+                        }
+                        catch {
+                            # Non-interactive context - default to Start over (safer)
+                            $moreResponse = 's'
+                            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Start over"
+                        }
 
                         if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
                             Write-Host "Starting fresh..." -ForegroundColor Yellow
@@ -363,18 +466,42 @@ function New-Step {
             }
             else {
                 # Count total steps in the script by finding all New-Step calls
-                $scriptContent = Get-Content -Path $scriptPath -Raw
+                try {
+                    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptReadFailed',
+                        [System.Management.Automation.ErrorCategory]::ReadError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                }
                 $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
                 # Find all step line numbers to determine which step number we're on
                 $stepLines = @()
                 $lineNumber = 1
-                foreach ($line in (Get-Content -Path $scriptPath)) {
-                    if ($line -match '(?i)^\s*New-Step\s+\{') {
-                        $stepLines += "${scriptPath}:${lineNumber}"
+                try {
+                    foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
+                        if ($line -match '(?i)^\s*New-Step\s+\{') {
+                            $stepLines += "${scriptPath}:${lineNumber}"
+                        }
+                        $lineNumber++
                     }
-                    $lineNumber++
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptReadFailed',
+                        [System.Management.Automation.ErrorCategory]::ReadError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
                 }
 
                 # Find the index of the last completed step
@@ -417,7 +544,14 @@ function New-Step {
                         Write-Host "Choice? [" -NoNewline
                         Write-Host "R" -NoNewline -ForegroundColor Cyan
                         Write-Host "/s/m/q]: " -NoNewline
-                        $response = Read-Host
+                        try {
+                            $response = Read-Host
+                        }
+                        catch {
+                            # Non-interactive context - default to Resume (safer for unchanged scripts)
+                            $response = 'r'
+                            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Resume"
+                        }
 
                         if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
                             Write-Host ""
@@ -441,7 +575,14 @@ function New-Step {
                             Write-Host "  [Q] Quit" -ForegroundColor White
                             Write-Host ""
                             Write-Host "Choice? [R/s/m/q]: " -NoNewline
-                            $moreResponse = Read-Host
+                            try {
+                                $moreResponse = Read-Host
+                            }
+                            catch {
+                                # Non-interactive context - default to Resume (safer for unchanged scripts)
+                                $moreResponse = 'r'
+                                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Resume"
+                            }
 
                             if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
                                 Write-Host "Starting fresh..." -ForegroundColor Yellow
@@ -530,18 +671,42 @@ function New-Step {
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
 
         # Calculate step number (X/Y)
-        $scriptContent = Get-Content -Path $scriptPath -Raw
+        try {
+            $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+        }
+        catch {
+            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ScriptReadFailed',
+                [System.Management.Automation.ErrorCategory]::ReadError,
+                $scriptPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
         $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         $totalSteps = $stepMatches.Count
 
         # Find all step line numbers
         $stepLines = @()
         $lineNumber = 1
-        foreach ($line in (Get-Content -Path $scriptPath)) {
-            if ($line -match '(?i)^\s*New-Step\s+\{') {
-                $stepLines += "${scriptPath}:${lineNumber}"
+        try {
+            foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
+                if ($line -match '(?i)^\s*New-Step\s+\{') {
+                    $stepLines += "${scriptPath}:${lineNumber}"
+                }
+                $lineNumber++
             }
-            $lineNumber++
+        }
+        catch {
+            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ScriptReadFailed',
+                [System.Management.Automation.ErrorCategory]::ReadError,
+                $scriptPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
         }
         $currentStepNumber = $stepLines.IndexOf($stepId) + 1
 
@@ -564,7 +729,19 @@ function New-Step {
             # Update state file after successful execution (including $Stepper data)
             $stepperData = $callingScope.PSVariable.Get('Stepper').Value
             # Persist state including the script contents for better change inspection
-            $scriptContents = Get-Content -Path $scriptPath -Raw
+            try {
+                $scriptContents = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+            }
+            catch {
+                $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'ScriptReadFailed',
+                    [System.Management.Automation.ErrorCategory]::ReadError,
+                    $scriptPath
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
+            }
             Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData -ScriptContents $scriptContents
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
 
@@ -573,8 +750,14 @@ function New-Step {
             }
         }
         catch {
-            Write-Error "Step failed at $stepId : $_"
-            throw
+            $exception = [System.Exception]::new("Step failed at $stepId", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'StepExecutionFailed',
+                [System.Management.Automation.ErrorCategory]::OperationStopped,
+                $stepId
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
         }
     }
 }

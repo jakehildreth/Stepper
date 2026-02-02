@@ -24,7 +24,14 @@ function Remove-StepperState {
             Remove-Item -Path $StatePath -Force -ErrorAction Stop
         }
         catch {
-            Write-Warning "Failed to remove state file '$StatePath': $_"
+            $exception = [System.IO.IOException]::new("Failed to remove state file '$StatePath'", $_.Exception)
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'StateRemovalFailed',
+                [System.Management.Automation.ErrorCategory]::WriteError,
+                $StatePath
+            )
+            $PSCmdlet.WriteError($errorRecord)
         }
     }
 }

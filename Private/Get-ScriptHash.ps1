@@ -26,6 +26,13 @@ function Get-ScriptHash {
         [System.BitConverter]::ToString($hash).Replace('-', '')
     }
     catch {
-        throw "Failed to calculate hash for script '$ScriptPath': $_"
+        $exception = [System.Security.Cryptography.CryptographicException]::new("Failed to calculate hash for script '$ScriptPath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'HashCalculationFailed',
+            [System.Management.Automation.ErrorCategory]::OperationStopped,
+            $ScriptPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
     }
 }

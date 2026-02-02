@@ -33,20 +33,21 @@ function Stop-Stepper {
 
     try {
         $callStack = Get-PSCallStack
+        $scriptPath = $null
 
         # Find the calling script (skip this function)
         for ($i = 1; $i -lt $callStack.Count; $i++) {
             $frame = $callStack[$i]
-            $scriptPath = $frame.ScriptName
+            $candidatePath = $frame.ScriptName
 
             # Skip frames without a script name
-            if (-not $scriptPath) {
+            if (-not $candidatePath) {
                 continue
             }
 
             # Skip frames from within the Stepper module
             # Normalize path for cross-platform comparison
-            $normalizedPath = $scriptPath -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
+            $normalizedPath = $candidatePath -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
             $sep = [System.IO.Path]::DirectorySeparatorChar
             if ($normalizedPath -like '*Stepper.psm1' -or
                 $normalizedPath -like "*${sep}Private${sep}*.ps1" -or
@@ -54,18 +55,34 @@ function Stop-Stepper {
                 continue
             }
 
-            # Found the user's script
+            # Found a user script - use it
+            $scriptPath = $candidatePath
+            break
+        }
+
+        # If we didn't find a script in the call stack, try to get it from the calling scope's __StepperExecutionState
+        if (-not $scriptPath) {
+            $callingScope = $PSCmdlet.SessionState
+            try {
+                $executionState = $callingScope.PSVariable.Get('__StepperExecutionState')
+                if ($executionState -and $executionState.Value.CurrentScriptPath) {
+                    $scriptPath = $executionState.Value.CurrentScriptPath
+                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Retrieved script path from execution state"
+                }
+            } catch {
+                # Ignore - we'll handle the missing path below
+            }
+        }
+
+        if ($scriptPath) {
             $statePath = Get-StepperStatePath -ScriptPath $scriptPath
             Remove-StepperState -StatePath $statePath
             $scriptName = Split-Path $scriptPath -Leaf
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptName"
-
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleanup complete!"
-
-            return
+        } else {
+            Write-Warning "Unable to determine calling script from call stack"
         }
-
-        Write-Warning "Unable to determine calling script from call stack"
     }
     catch {
         Write-Error "Failed to clear Stepper state: $_"
