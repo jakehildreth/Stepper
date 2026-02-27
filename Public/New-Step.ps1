@@ -750,7 +750,12 @@ function New-Step {
             }
         }
         catch {
-            $exception = [System.Exception]::new("Step failed at $stepId", $_.Exception)
+            $innerMessage = if ($_.Exception.Message) {
+                $_.Exception.Message
+            } else {
+                $_.ToString()
+            }
+            $exception = [System.Exception]::new("Step failed at ${stepId}: $innerMessage", $_.Exception)
             $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                 $exception,
                 'StepExecutionFailed',
