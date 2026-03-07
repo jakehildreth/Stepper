@@ -28,6 +28,8 @@ function Show-MoreDetails {
         [Parameter(Mandatory)] [string]$CurrentHash,
         [Parameter(Mandatory)] [string]$LastStep,
         [Parameter(Mandatory)] [int]$NextStepLine,
+        [Parameter()] [string]$NextStepName,
+        [Parameter()] [int]$NextStepNumber,
         [switch]$ShowHashComparison
     )
 
@@ -65,7 +67,16 @@ function Show-MoreDetails {
 
     # Show full contents of the last completed New-Step using saved script contents if available
     Write-Host ""
-    Write-Host "Last completed step:"
+    $lastStepLine = if ($LastStep -match ':(\d+)$') { $Matches[1] } else { '?' }
+    $lastStepNumber = $ExistingState.LastCompletedStepNumber
+    $lastStepLabel = if ($ExistingState.LastCompletedStepName) {
+        "$($ExistingState.LastCompletedStepName) (Step $lastStepNumber, Line $lastStepLine)"
+    } elseif ($lastStepNumber) {
+        "Step $lastStepNumber (Line $lastStepLine)"
+    } else {
+        "Line $lastStepLine"
+    }
+    Write-Host "Last completed step: $lastStepLabel"
     Write-Host ""
     if ($ExistingState.ScriptContents) {
         $prevLines = $ExistingState.ScriptContents -split "`n"
@@ -159,7 +170,7 @@ function Show-MoreDetails {
                 # Search upward for the nearest 'New-Step {' start line
                 $foundStart = $null
                 for ($s = $prevStepLine; $s -ge 1; $s--) {
-                    if ($prevLines[$s - 1] -match '^\s*New-Step\s*\{') {
+                    if ($prevLines[$s - 1] -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
                         $foundStart = $s
                         break
                     }
@@ -211,7 +222,14 @@ function Show-MoreDetails {
 
     # Show context around the restart line in the current script (2 lines before / 3 lines after)
     Write-Host ""
-    Write-Host "Context around next restart line:"
+    $nextRestartHeader = if ($NextStepName) {
+        "$NextStepName (Step $NextStepNumber, Line $NextStepLine)"
+    } elseif ($NextStepNumber -gt 0) {
+        "Step $NextStepNumber (Line $NextStepLine)"
+    } else {
+        "Line $NextStepLine"
+    }
+    Write-Host "Context around next restart line: $nextRestartHeader"
     Write-Host ""
     $ns = [int]$NextStepLine
     $start2 = [Math]::Max(1, $ns - 2)

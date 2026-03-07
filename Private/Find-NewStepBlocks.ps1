@@ -20,7 +20,7 @@ function Find-NewStepBlocks {
     $stopStepperLine = -1
 
     for ($i = 0; $i -lt $ScriptLines.Count; $i++) {
-        if ($ScriptLines[$i] -match '(?i)^\s*New-Step\s+\{') {
+        if ($ScriptLines[$i] -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
             # Find the closing brace for this New-Step block
             $braceCount = 0
             $blockStart = $i
