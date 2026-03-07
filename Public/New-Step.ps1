@@ -11,29 +11,42 @@ function New-Step {
         The script content is hashed to detect modifications. If the script changes
         between runs, the state is invalidated and execution starts fresh.
 
+    .PARAMETER Name
+        Optional name for this step. Displayed in verbose output and resume prompts.
+
     .PARAMETER ScriptBlock
         The code to execute for this step.
 
     .EXAMPLE
-        New-Step {
+        New-Step 'Download Files' {
             Write-Host "Downloading files..."
             Start-Sleep -Seconds 2
         }
 
-        New-Step {
+        New-Step 'Process Data' {
             Write-Host "Processing data..."
             Start-Sleep -Seconds 2
         }
 
         If the script fails during processing, the next run will skip the download step.
+        $Stepper.StepName and $Stepper.StepNumber are available inside each block.
+
+    .EXAMPLE
+        New-Step {
+            Write-Host "Unnamed step — backward-compatible syntax."
+        }
 
     .NOTES
         State files are stored alongside the script with a .stepper extension.
         Call Stop-Stepper at the end of your script to remove the state file upon successful completion.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Unnamed')]
     param(
-        [Parameter(Mandatory, Position = 0)]
+        [Parameter(ParameterSetName = 'Named', Mandatory, Position = 0)]
+        [string]$Name,
+
+        [Parameter(ParameterSetName = 'Named', Mandatory, Position = 1)]
+        [Parameter(ParameterSetName = 'Unnamed', Mandatory, Position = 0)]
         [scriptblock]$ScriptBlock
     )
 
@@ -333,16 +346,22 @@ function New-Step {
                     )
                     $PSCmdlet.ThrowTerminatingError($errorRecord)
                 }
-                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
-                # Find all step line numbers
+                # Find all step line numbers and names
                 $stepLines = @()
+                $stepNames = @()
                 $lineNumber = 1
                 $lines = $scriptContent -split "`r?`n"
                 foreach ($line in $lines) {
-                    if ($line -match '(?i)^\s*New-Step\s+\{') {
+                    if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
                         $stepLines += "${scriptPath}:${lineNumber}"
+                        if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
+                            $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+                        } else {
+                            $stepNames += $null
+                        }
                     }
                     $lineNumber++
                 }
@@ -361,20 +380,25 @@ function New-Step {
                 $scriptName = Split-Path $scriptPath -Leaf
                 $nextStepId = $stepLines[$lastStepIndex + 1]
                 $nextStepLine = ($nextStepId -split ':')[-1]
+                $nextStepName = $stepNames[$lastStepIndex + 1]
+                $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
+                $lastStepLine = ($lastStep -split ':')[-1]
+                $lastStepDisplay = if ($existingState.LastCompletedStepName) { "$($existingState.LastCompletedStepName) (Step $($lastStepIndex + 1), Line $lastStepLine)" } else { "Step $($lastStepIndex + 1) (Line $lastStepLine)" }
 
                 while ($true) {
                     Write-Host ""
                     Write-Host "[!] Incomplete script run detected, but $scriptName has been modified." -ForegroundColor Magenta
                     Write-Host ""
-                    Write-Host "Total Steps:      $totalSteps"
-                    Write-Host "Steps Completed:  $($lastStepIndex + 1)"
-                    Write-Host "Variables:        $availableVars"
-                    Write-Host "Last Activity:    $timestamp"
+                    Write-Host "Total Steps:           $totalSteps"
+                    Write-Host "Steps Completed:       $($lastStepIndex + 1)"
+                    Write-Host "Last Completed Step:   $lastStepDisplay"
+                    Write-Host "Variables:             $availableVars"
+                    Write-Host "Last Activity:         $timestamp"
                     Write-Host ""
 
                     Write-Host "How would you like to proceed?"
                     Write-Host ""
-                    Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (May produce inconsistent results)" -ForegroundColor White
+                    Write-Host "  [R] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
                     Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
                     Write-Host "  [M] More details" -ForegroundColor White
                     Write-Host "  [Q] Quit" -ForegroundColor White
@@ -399,21 +423,20 @@ function New-Step {
                     }
                     elseif ($response -eq 'R' -or $response -eq 'r') {
                         Write-Host ""
-                        Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
+                        Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                         $executionState.RestoreMode = $true
                         $executionState.TargetStep = $lastStep
                         break
                     }
                     elseif ($response -eq 'M' -or $response -eq 'm') {
-                        Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -ShowHashComparison
+                        Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber -ShowHashComparison
 
                         # Re-display the bottom inline menu and accept an immediate choice
-                        Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (May produce inconsistent results)" -ForegroundColor White
+                        Write-Host "  [R] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
                         Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
-                        Write-Host "  [M] More details" -ForegroundColor White
                         Write-Host "  [Q] Quit" -ForegroundColor White
                         Write-Host ""
-                        Write-Host "Choice? [r/S/m/q]: " -NoNewline
+                        Write-Host "Choice? [r/S/q]: " -NoNewline
                         try {
                             $moreResponse = Read-Host
                         }
@@ -430,14 +453,10 @@ function New-Step {
                         }
                         elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
                             Write-Host ""
-                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
-                        }
-                        elseif ($moreResponse -eq 'M' -or $moreResponse -eq 'm') {
-                            # Re-display details (loop)
-                            continue
                         }
                         elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
                             Write-Host ""
@@ -479,16 +498,22 @@ function New-Step {
                     )
                     $PSCmdlet.ThrowTerminatingError($errorRecord)
                 }
-                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $totalSteps = $stepMatches.Count
 
-                # Find all step line numbers to determine which step number we're on
+                # Find all step line numbers and names to determine which step number we're on
                 $stepLines = @()
+                $stepNames = @()
                 $lineNumber = 1
                 try {
                     foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
-                        if ($line -match '(?i)^\s*New-Step\s+\{') {
+                        if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
                             $stepLines += "${scriptPath}:${lineNumber}"
+                            if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
+                                $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+                            } else {
+                                $stepNames += $null
+                            }
                         }
                         $lineNumber++
                     }
@@ -518,13 +543,17 @@ function New-Step {
                     'None'
                 }
 
+                $lastStepLine = ($lastStep -split ':')[-1]
+                $lastStepDisplay = if ($existingState.LastCompletedStepName) { "$($existingState.LastCompletedStepName) (Step $($lastStepIndex + 1), Line $lastStepLine)" } else { "Step $($lastStepIndex + 1) (Line $lastStepLine)" }
+
                 Write-Host ""
                 Write-Host "[!] Incomplete script run detected!" -ForegroundColor Magenta
                 Write-Host ""
-                Write-Host "Total Steps:      $totalSteps"
-                Write-Host "Steps Completed:  $($lastStepIndex + 1)"
-                Write-Host "Variables:        $availableVars"
-                Write-Host "Last Activity:    $timestamp"
+                Write-Host "Total Steps:           $totalSteps"
+                Write-Host "Steps Completed:       $($lastStepIndex + 1)"
+                Write-Host "Last Completed Step:   $lastStepDisplay"
+                Write-Host "Variables:             $availableVars"
+                Write-Host "Last Activity:         $timestamp"
                 Write-Host ""
 
                 if ($nextStepNumber -le $totalSteps) {
@@ -532,11 +561,13 @@ function New-Step {
                     $scriptName = Split-Path $scriptPath -Leaf
                     $nextStepId = $stepLines[$lastStepIndex + 1]
                     $nextStepLine = ($nextStepId -split ':')[-1]
+                    $nextStepName = $stepNames[$lastStepIndex + 1]
+                    $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
 
                     while ($true) {
                         Write-Host "How would you like to proceed?"
                         Write-Host ""
-                        Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
+                        Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
                         Write-Host "  [S] Start over" -ForegroundColor White
                         Write-Host "  [M] More details" -ForegroundColor White
                         Write-Host "  [Q] Quit" -ForegroundColor White
@@ -555,7 +586,7 @@ function New-Step {
 
                         if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
                             Write-Host ""
-                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
@@ -566,15 +597,14 @@ function New-Step {
                             break
                         }
                         elseif ($response -eq 'M' -or $response -eq 'm') {
-                            Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine
+                            Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber
 
                             # Print the action menu again at the bottom of the details and accept an immediate choice
-                            Write-Host "  [R] Resume $scriptName from Line ${nextStepLine} (Default)" -ForegroundColor Cyan
+                            Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
                             Write-Host "  [S] Start over" -ForegroundColor White
-                            Write-Host "  [M] More details" -ForegroundColor White
                             Write-Host "  [Q] Quit" -ForegroundColor White
                             Write-Host ""
-                            Write-Host "Choice? [R/s/m/q]: " -NoNewline
+                            Write-Host "Choice? [R/s/q]: " -NoNewline
                             try {
                                 $moreResponse = Read-Host
                             }
@@ -591,14 +621,10 @@ function New-Step {
                             }
                             elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
                                 Write-Host ""
-                                Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
+                                Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                                 $executionState.RestoreMode = $true
                                 $executionState.TargetStep = $lastStep
                                 break
-                            }
-                            elseif ($moreResponse -eq 'M' -or $moreResponse -eq 'm') {
-                                # Re-display details (loop)
-                                continue
                             }
                             elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
                                 Write-Host ""
@@ -620,7 +646,7 @@ function New-Step {
                         else {
                             # Default to Resume for invalid input
                             Write-Host ""
-                            Write-Host "Resuming from Step $nextStepNumber..." -ForegroundColor Green
+                            Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
                             break
@@ -684,16 +710,22 @@ function New-Step {
             )
             $PSCmdlet.ThrowTerminatingError($errorRecord)
         }
-        $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+        $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
         $totalSteps = $stepMatches.Count
 
-        # Find all step line numbers
+        # Find all step line numbers and names
         $stepLines = @()
+        $stepNames = @()
         $lineNumber = 1
         try {
             foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
-                if ($line -match '(?i)^\s*New-Step\s+\{') {
+                if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
                     $stepLines += "${scriptPath}:${lineNumber}"
+                    if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
+                        $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+                    } else {
+                        $stepNames += $null
+                    }
                 }
                 $lineNumber++
             }
@@ -710,7 +742,8 @@ function New-Step {
         }
         $currentStepNumber = $stepLines.IndexOf($stepId) + 1
 
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step $currentStepNumber/$totalSteps ($displayStepId)"
+        $stepDisplaySuffix = if ($PSCmdlet.ParameterSetName -eq 'Named') { " - '$Name'" } else { '' }
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step $currentStepNumber/$totalSteps$stepDisplaySuffix ($displayStepId)"
 
         # Show current $Stepper data
         try {
@@ -721,6 +754,17 @@ function New-Step {
             }
         } catch {
             # Ignore if unable to read $Stepper
+        }
+
+        # Inject step metadata into $Stepper
+        try {
+            $stepperData = $callingScope.PSVariable.Get('Stepper').Value
+            if ($stepperData -is [hashtable]) {
+                $stepperData['StepName'] = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
+                $stepperData['StepNumber'] = $currentStepNumber
+            }
+        } catch {
+            # Ignore if unable to inject step metadata
         }
 
         try {
@@ -742,7 +786,8 @@ function New-Step {
                 )
                 $PSCmdlet.ThrowTerminatingError($errorRecord)
             }
-            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepperData $stepperData -ScriptContents $scriptContents
+            $completedStepName = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
+            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepName $completedStepName -StepNumber $currentStepNumber -StepperData $stepperData -ScriptContents $scriptContents
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
 
             if ($stepperData -and $stepperData.Count -gt 0) {

@@ -15,6 +15,12 @@ function Write-StepperState {
     .PARAMETER LastCompletedStep
         Identifier of the last successfully completed step (format: "filepath:line").
 
+    .PARAMETER StepName
+        Optional name of the completed step.
+
+    .PARAMETER StepNumber
+        1-based index of the completed step.
+
     .PARAMETER StepperData
         The $Stepper hashtable to persist.
 
@@ -36,6 +42,12 @@ function Write-StepperState {
         [string]$LastCompletedStep,
 
         [Parameter()]
+        [string]$StepName,
+
+        [Parameter()]
+        [int]$StepNumber,
+
+        [Parameter()]
         [hashtable]$StepperData,
 
         [Parameter()]
@@ -43,11 +55,13 @@ function Write-StepperState {
     )
 
     $state = [PSCustomObject]@{
-        ScriptHash        = $ScriptHash
-        ScriptContents    = $ScriptContents
-        LastCompletedStep = $LastCompletedStep
-        Timestamp         = (Get-Date).ToString('o')
-        StepperData       = $StepperData
+        ScriptHash              = $ScriptHash
+        ScriptContents          = $ScriptContents
+        LastCompletedStep       = $LastCompletedStep
+        LastCompletedStepName   = $StepName
+        LastCompletedStepNumber = $StepNumber
+        Timestamp               = (Get-Date).ToString('o')
+        StepperData             = $StepperData
     }
 
     try {
