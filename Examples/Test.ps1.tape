@@ -158,7 +158,7 @@ Type "#      Stepper being loaded! Eek!"
 Enter
 Type "#  - Code that isn't wrapped in New-Step {} blocks"
 Enter
-Type "#      Non-resumable code may be something you want... but maybe not?"
+Type "#      Unmanaged code may be something you want... but maybe not?"
 Enter
 Type "#  - Missing Stop-Stepper command at the end of the script"
 Enter
