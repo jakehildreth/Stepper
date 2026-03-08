@@ -2,7 +2,49 @@
 
 # Stepper
 
-A PowerShell utility module for creating resumable, step-by-step scripts with automatic state persistence and cross-platform support.
+A cross-platform PowerShell utility module for creating resumable, step-by-step scripts with automatic state persistence.
+
+![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+[![PSGallery](https://img.shields.io/powershellgallery/v/Stepper)](https://www.powershellgallery.com/packages/Stepper)
+![License](https://img.shields.io/badge/license-MIT%20w%2FCommons%20Clause-green)
+
+---
+
+## Quick Start
+
+```powershell
+Install-Module -Name Stepper -Scope CurrentUser -Force
+```
+
+Create a `.ps1` script with `New-Step` blocks:
+
+```powershell
+#Requires -Modules Stepper   # documents the dependency; Stepper enforces this
+[CmdletBinding()]            # required for error propagation and -Verbose support
+param()
+
+New-Step 'Download Files' {
+    Write-Host "Downloading files..."
+    # your code here
+}
+
+New-Step 'Process Data' {
+    Write-Host "Processing data..."
+    # your code here
+}
+
+New-Step 'Upload Results' {
+    Write-Host "Uploading results..."
+    # your code here
+}
+
+Stop-Stepper   # removes the state file on successful completion
+```
+
+If the script fails inside a `New-Step` block, the next run resumes at the step that failed — all previously completed steps are skipped.
+
+---
 
 ## Demo
 
@@ -10,61 +52,19 @@ https://github.com/user-attachments/assets/4717179e-1698-4e19-aac3-e514d04333b8
 
 Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://charm.land).
 
-## How It Works
+---
 
-- Each step is tracked by its location in the script (file:line)
-- State is saved after each successful step in a `.stepper` file (includes `ScriptContents`, `LastCompletedStep`, timestamp, and persisted `$Stepper` data)
-- On resume, completed steps can be skipped automatically
-- If the script has changed between runs, Stepper prompts the user to Resume, Start over (removes the state file), view More details, or Quit
-- Non-resumable code is detected and can be suppressed with `#region Stepper ignore`/`#endregion Stepper ignore` or handled interactively
-- Use the More details view to inspect saved step body, Stepper variables, and restart context
-- Call `Stop-Stepper` at the end to clean up
+## Learn More
 
-## Installation
+- [How It Works](docs/how-it-works.md) — execution lifecycle, resume logic, verbose output, non-interactive mode
+- [Named Steps](docs/named-steps.md) — step names, `$Stepper.StepName`, resume prompt formats
+- [Data Persistence](docs/data-persistence.md) — `$Stepper` hashtable, state file schema
+- [Unmanaged Code](docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
+- [API Reference](docs/api-reference.md) — `New-Step`, `Stop-Stepper`, error handling
+- [Examples](docs/examples.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
-```powershell
-Install-Module -Name Stepper
-```
-
-## Usage
-
-Wrap your script steps in `New-Step` blocks. If the script fails inside of a `New-Step` block, the next run of the script resumes at the step that failed.
-
-```powershell
-#Requires -Modules Stepper
-[CmdletBinding()]
-param()
-
-New-Step {
-    Write-Host "Step 1: Download files..."
-    # Your code here
-}
-
-New-Step {
-    Write-Host "Step 2: Process data..."
-    # Your code here
-}
-
-New-Step {
-    Write-Host "Step 3: Upload results..."
-    # Your code here
-}
-
-Stop-Stepper
-```
-## Data Persistence
-
-Use the `$Stepper` variable to share data between steps:
-
-```powershell
-New-Step {
-    $Stepper.Data = Get-Process
-}
-
-New-Step {
-    $Stepper.Data | Where-Object CPU -gt 100
-}
-```
+---
 
 ## License
 
