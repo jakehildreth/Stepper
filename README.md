@@ -56,13 +56,13 @@ Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://char
 
 ## Learn More
 
-- [How It Works](docs/how-it-works.md) — execution lifecycle, resume logic, verbose output, non-interactive mode
-- [Named Steps](docs/named-steps.md) — step names, `$Stepper.StepName`, resume prompt formats
-- [Data Persistence](docs/data-persistence.md) — `$Stepper` hashtable, state file schema
-- [Unmanaged Code](docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
-- [API Reference](docs/api-reference.md) — `New-Step`, `Stop-Stepper`, error handling
-- [Examples](docs/examples.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- [How It Works](Docs/how-it-works.md) — execution lifecycle, resume logic, verbose output, non-interactive mode
+- [Named Steps](Docs/named-steps.md) — step names, `$Stepper.StepName`, resume prompt formats
+- [Data Persistence](Docs/data-persistence.md) — `$Stepper` hashtable, state file schema
+- [Unmanaged Code](Docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
+- [API Reference](Docs/api-reference.md) — `New-Step`, `Stop-Stepper`, error handling
+- [Examples](Docs/examples.md)
+- [Troubleshooting](Docs/troubleshooting.md)
 
 ---
 
