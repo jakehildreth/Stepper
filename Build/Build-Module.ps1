@@ -32,8 +32,8 @@ Build-Module -ModuleName 'Stepper' {
         GUID                   = '2260142f-ef07-4749-a430-a2062efefbf6'
         Author                 = 'Jake Hildreth'
         CompanyName            = 'Gilmour Technologies Ltd'
-        Copyright              = "(c) 2025 - $CopyrightYear Author @ Gilmour Technologies Ltd. All rights reserved."
-        Description            = 'A PowerShell module for creating resumable, step-by-step automation scripts with automatic state persistence and cross-platform support.'
+        Copyright              = "(c) 2025 - $CopyrightYear Jake Hildreth, Gilmour Technologies Ltd. All rights reserved."
+        Description            = 'A cross-platform PowerShell utility module for creating resumable, step-by-step scripts with automatic state persistence.'
         PowerShellVersion      = '5.1'
         Tags                   = @('Windows', 'MacOS', 'Linux')
     }

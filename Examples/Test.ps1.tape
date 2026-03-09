@@ -103,9 +103,9 @@ Hide
 Type "Clear-Host"
 Enter
 Show
-Type "# Code that is NOT wrapped in a New-Step block is not resumable and will"
+Type "# Code that is NOT wrapped in a New-Step block is considered 'unmanaged'"
 Enter
-Type "# execute every time you run the script."
+Type "# and will execute every time you run the script."
 Enter
 Type "(Get-Content ./Test.ps1)[5..12]"
 Sleep 500ms
@@ -148,7 +148,7 @@ Type "# identify issues that may prevent the script from operating as expected."
 Enter 2
 Type "#  - Missing [CmdletBinding()]"
 Enter
-Type "#      If CmdletBinding is missing, you can't use the Common Parameters."
+Type "#      If CmdletBinding is missing, you can't use Stepper. Full stop."
 Enter
 Type "#  - Missing #requires -Modules Stepper statement"
 Enter
@@ -158,7 +158,7 @@ Type "#      Stepper being loaded! Eek!"
 Enter
 Type "#  - Code that isn't wrapped in New-Step {} blocks"
 Enter
-Type "#      Non-resumable code may be something you want... but maybe not?"
+Type "#      Unmanaged code may be something you want... but maybe not?"
 Enter
 Type "#  - Missing Stop-Stepper command at the end of the script"
 Enter

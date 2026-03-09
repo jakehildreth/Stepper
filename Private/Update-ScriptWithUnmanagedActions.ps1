@@ -1,4 +1,4 @@
-function Update-ScriptWithNonResumableActions {
+function Update-ScriptWithUnmanagedActions {
     <#
     .SYNOPSIS
         Applies wrap/move/delete actions to a script.
@@ -176,5 +176,5 @@ function Update-ScriptWithNonResumableActions {
 
     $scriptName = Split-Path $ScriptPath -Leaf
     Write-Host ""
-    Write-Host "Changes applied to non-resumable code. Please re-run $scriptName." -ForegroundColor Green
+    Write-Host "Changes applied to unmanaged code. Please re-run $scriptName." -ForegroundColor Green
 }

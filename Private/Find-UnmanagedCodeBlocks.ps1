@@ -1,7 +1,7 @@
-function Find-NonResumableCodeBlocks {
+function Find-UnmanagedCodeBlocks {
     <#
     .SYNOPSIS
-        Identifies non-resumable code blocks between New-Step blocks.
+        Identifies unmanaged code blocks between New-Step blocks.
 
     .PARAMETER ScriptLines
         Array of script lines to analyze.
@@ -13,7 +13,7 @@ function Find-NonResumableCodeBlocks {
         Line number where Stop-Stepper is located.
 
     .OUTPUTS
-        Array of non-resumable code blocks with Lines and IsBeforeStop properties.
+        Array of unmanaged code blocks with Lines and IsBeforeStop properties.
     #>
     [CmdletBinding()]
     param(
@@ -29,7 +29,7 @@ function Find-NonResumableCodeBlocks {
         [int]$StopStepperLine
     )
 
-    $nonResumableBlocks = @()
+    $unmanagedBlocks = @()
 
     # Find all Stepper ignore regions
     $ignoredRegions = @()
@@ -98,7 +98,7 @@ function Find-NonResumableCodeBlocks {
         }
 
         if ($blockLines.Count -gt 0) {
-            $nonResumableBlocks += @{
+            $unmanagedBlocks += @{
                 Lines = $blockLines
                 IsBeforeStop = $false
             }
@@ -128,7 +128,7 @@ function Find-NonResumableCodeBlocks {
             }
 
             if ($blockLines.Count -gt 0) {
-                $nonResumableBlocks += @{
+                $unmanagedBlocks += @{
                     Lines = $blockLines
                     IsBeforeStop = $false
                 }
@@ -160,12 +160,12 @@ function Find-NonResumableCodeBlocks {
         }
 
         if ($blockLines.Count -gt 0) {
-            $nonResumableBlocks += @{
+            $unmanagedBlocks += @{
                 Lines = $blockLines
                 IsBeforeStop = ($StopStepperLine -ge 0)
             }
         }
     }
 
-    return $nonResumableBlocks
+    return $unmanagedBlocks
 }

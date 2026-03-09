@@ -153,7 +153,7 @@ function New-Step {
             exit
         }
 
-        # Check for non-resumable code between New-Step blocks and before Stop-Stepper
+        # Check for unmanaged code between New-Step blocks and before Stop-Stepper
         try {
             $scriptLines = Get-Content -Path $scriptPath -ErrorAction Stop
         }
@@ -172,15 +172,15 @@ function New-Step {
         $newStepBlocks = $blockInfo.NewStepBlocks
         $stopStepperLine = $blockInfo.StopStepperLine
 
-        $nonResumableBlocks = Find-NonResumableCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
+        $unmanagedBlocks = Find-UnmanagedCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
 
-        # Process each non-resumable block individually
-        if ($nonResumableBlocks.Count -gt 0) {
+        # Process each unmanaged block individually
+        if ($unmanagedBlocks.Count -gt 0) {
             $scriptName = Split-Path $scriptPath -Leaf
             $allLinesToRemove = @{}
 
-            foreach ($block in $nonResumableBlocks) {
-                $action = Get-NonResumableCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
+            foreach ($block in $unmanagedBlocks) {
+                $action = Get-UnmanagedCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
 
                 if ($action -eq 'Quit') {
                     Write-Host ""
@@ -198,7 +198,7 @@ function New-Step {
 
             # Apply all the changes
             if ($allLinesToRemove.Count -gt 0) {
-                Update-ScriptWithNonResumableActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
+                Update-ScriptWithUnmanagedActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
                 exit
             }
         }

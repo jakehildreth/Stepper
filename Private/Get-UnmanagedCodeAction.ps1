@@ -1,7 +1,7 @@
-function Get-NonResumableCodeAction {
+function Get-UnmanagedCodeAction {
     <#
     .SYNOPSIS
-        Prompts user for action on a non-resumable code block.
+        Prompts user for action on an unmanaged code block.
 
     .PARAMETER ScriptName
         Name of the script file.
@@ -33,7 +33,7 @@ function Get-NonResumableCodeAction {
     $hasStepperVar = ($blockCode -join ' ') -match '\$Stepper\.'
 
     Write-Host ""
-    Write-Host "[!] Non-resumable code detected in ${ScriptName}." -ForegroundColor Magenta
+    Write-Host "[!] Unmanaged code detected in ${ScriptName}." -ForegroundColor Magenta
     Write-Host "    This code will execute on every run of this script," -ForegroundColor Magenta
     Write-Host "    including resumed runs:" -ForegroundColor Magenta
     Write-Host ""
