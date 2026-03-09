@@ -800,7 +800,11 @@ function New-Step {
             } else {
                 $_.ToString()
             }
-            $exception = [System.Exception]::new("Step failed at ${stepId}: $innerMessage", $_.Exception)
+            $origin = $_.InvocationInfo
+            $location = if ($origin.ScriptName -and $origin.ScriptLineNumber) {
+                "$([System.IO.Path]::GetFileName($origin.ScriptName)):$($origin.ScriptLineNumber)"
+            } else { $stepId }
+            $exception = [System.Exception]::new("Step failed [$location]: $innerMessage", $_.Exception)
             $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                 $exception,
                 'StepExecutionFailed',
