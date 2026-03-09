@@ -42,7 +42,7 @@ New-Step 'Upload Results' {
 Stop-Stepper   # removes the state file on successful completion
 ```
 
-If the script fails inside a `New-Step` block, the next run resumes at the step that failed — all previously completed steps are skipped.
+If the script fails inside a `New-Step` block, the next run resumes at the step that failed. All previously completed steps are skipped!
 
 ---
 
