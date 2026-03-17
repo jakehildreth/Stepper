@@ -196,6 +196,7 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
 
         It 'Does not rethrow' {
+            Mock Write-Error {}
             { Stop-Stepper } | Should -Not -Throw
         }
     }
