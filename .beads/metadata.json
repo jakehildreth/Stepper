@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "Stepper",
+  "project_id": "193b48a0-4b62-4a62-a93c-20889b47158e"
+}

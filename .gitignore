@@ -21,3 +21,8 @@ Lib/Core/*
 
 # Stepper state files
 *.stepper
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
