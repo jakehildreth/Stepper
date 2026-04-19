@@ -19,3 +19,11 @@ Delete the `.stepper` file manually, or select `[S] Start over` at the resume pr
 **The logo is distracting**
 
 Set `$env:STEPPER_SHOW_LOGO = 'false'` before importing the module.
+
+**Stepper fails with `TranscriptAlreadyActive`**
+
+A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an enterprise runbook). Call `Stop-Transcript` before running the script, or use `-NoLog` on all steps to disable logging entirely.
+
+**`Read-Host` prompts and responses don't appear in the log file**
+
+`Start-Transcript` on macOS/Linux (PS Core) does not capture `Read-Host` input. This is a platform limitation — all other output (`Write-Host`, pipeline, etc.) is captured normally. On Windows the behavior is the same in both PS 5.1 and PS 7.

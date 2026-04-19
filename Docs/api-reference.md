@@ -5,16 +5,20 @@
 Executes a step in a resumable script. Tracks state by `filepath:lineNumber`.
 
 ```powershell
-New-Step [-Name] <string> [-ScriptBlock] <scriptblock>
-New-Step [-ScriptBlock] <scriptblock>
+New-Step [-Name] <string> [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog]
+New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog]
 ```
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `Name` | `string` | No | Display name shown in prompts and verbose output |
 | `ScriptBlock` | `scriptblock` | Yes | The code to execute |
+| `LogPath` | `string` | No | Path to the log file. Overrides the default (`<scriptname>.ps1.stepper.log`). Only needs to be specified once — Stepper resolves it via AST scan at init time. |
+| `NoLog` | `switch` | No | Exclude this step from logging. At init time Stepper prompts to choose scope: log all / skip flagged / disable entirely. |
 
 Must be called from a saved `.ps1` file. Does not work from the console or an unsaved editor buffer.
+
+See [Logging](logging.md) for full details on log format, step transcripts, and active transcript conflict handling.
 
 ## `Stop-Stepper`
 

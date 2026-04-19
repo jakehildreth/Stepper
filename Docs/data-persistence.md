@@ -40,6 +40,9 @@ Stepper stores state in `<scriptname>.ps1.stepper` alongside the script, using P
 | `LastCompletedStepNumber` | 1-based step index |
 | `Timestamp` | ISO 8601 datetime |
 | `StepperData` | Serialized `$Stepper` hashtable |
+| `LogPath` | Resolved path to the log file, or `$null` if logging is disabled |
+| `LoggingEnabled` | `$true` unless the user chose `[N]` at the scope prompt |
+| `NoLogStepIds` | Array of `filepath:lineNumber` identifiers for steps with `-NoLog` |
 
 **Manual inspection:**
 

@@ -72,6 +72,17 @@ Run your script with `-Verbose` to see timestamped activity from Stepper:
 
 Verbose messages cover: step execution, state read/write/remove, variable changes, and hash comparisons. Requires `[CmdletBinding()]` in the calling script.
 
+## Logging
+
+Stepper writes a structured log file (`<scriptname>.ps1.stepper.log`) alongside the script by default. Each step produces:
+
+- An `[INFO]` entry at the start of execution with step number and source location
+- A per-step transcript section (`=== BEGIN STEP N TRANSCRIPT ===`) capturing host output
+- An `[INFO]` entry on completion with elapsed time
+- An `[ERROR]` entry if the step fails
+
+Logging is on by default. Use `-NoLog` on a `New-Step` call to exclude a step, or `-LogPath` to override the log file location. See [Logging](logging.md) for full details.
+
 ## Logo
 
 Stepper displays a colorful pixel-art logo on module import. To suppress it:

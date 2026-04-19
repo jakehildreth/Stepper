@@ -75,7 +75,20 @@ function Stop-Stepper {
         }
 
         if ($scriptPath) {
+            # Read log config from execution state before removing state
+            $logPath = $null
+            try {
+                $callingScope = $PSCmdlet.SessionState
+                $execState = $callingScope.PSVariable.Get('__StepperExecutionState')
+                if ($execState -and $execState.Value -and $execState.Value.LogPath) {
+                    $logPath = $execState.Value.LogPath
+                }
+            } catch {
+                # Ignore — log path optional
+            }
+
             $statePath = Get-StepperStatePath -ScriptPath $scriptPath
+            Write-StepperLog -Message "All steps complete. State file removed." -LogPath $logPath
             Remove-StepperState -StatePath $statePath
             $scriptName = Split-Path $scriptPath -Leaf
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptName"

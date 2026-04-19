@@ -17,6 +17,18 @@ function New-Step {
     .PARAMETER ScriptBlock
         The code to execute for this step.
 
+    .PARAMETER LogPath
+        Optional path to a log file. If specified on any step, Stepper uses that path for
+        all structured log output and step transcripts for the entire run. If multiple steps
+        specify different paths, Stepper prompts the user to choose. If omitted on all steps,
+        the log is written to the same directory as the script with the name
+        scriptname.ps1.stepper.log.
+
+    .PARAMETER NoLog
+        Skips logging for this step. When present on one or more steps, Stepper prompts the
+        user at init time to choose whether to ignore the flag (log all steps), skip only
+        the flagged steps, or disable logging entirely.
+
     .EXAMPLE
         New-Step 'Download Files' {
             Write-Host "Downloading files..."
@@ -47,7 +59,13 @@ function New-Step {
 
         [Parameter(ParameterSetName = 'Named', Mandatory, Position = 1)]
         [Parameter(ParameterSetName = 'Unnamed', Mandatory, Position = 0)]
-        [scriptblock]$ScriptBlock
+        [scriptblock]$ScriptBlock,
+
+        [Parameter()]
+        [string]$LogPath,
+
+        [Parameter()]
+        [switch]$NoLog
     )
 
     # Inherit verbose preference by walking the call stack
@@ -144,6 +162,9 @@ function New-Step {
             CurrentScriptPath = $scriptPath
             CurrentScriptHash = $currentHash
             StatePath         = $statePath
+            LogPath           = $null
+            LoggingEnabled    = $true
+            NoLogStepIds      = @()
         }
         $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
@@ -317,6 +338,114 @@ function New-Step {
         }
 
         $existingState = Read-StepperState -StatePath $statePath
+
+        #Region Log config — resolve on fresh run, restore on resume
+        if ($existingState -and $existingState.LogPath) {
+            # Resumed run — restore log config from state, no prompts
+            $executionState.LogPath        = $existingState.LogPath
+            $executionState.LoggingEnabled = $existingState.LoggingEnabled
+            $executionState.NoLogStepIds   = if ($existingState.NoLogStepIds) { @($existingState.NoLogStepIds) } else { @() }
+        } else {
+            # Fresh run — scan AST and resolve
+            $logConfig  = Get-StepLogConfig -ScriptPath $scriptPath
+            $scriptDir  = Split-Path -Path $scriptPath -Parent
+            $scriptName = Split-Path -Path $scriptPath -Leaf
+            $defaultLog = Join-Path -Path $scriptDir -ChildPath "$scriptName.stepper.log"
+
+            # Resolve log path
+            if ($logConfig.HasConflict) {
+                Write-Host ""
+                Write-Host "[i] Multiple -LogPath values found across New-Step calls:" -ForegroundColor Cyan
+                Write-Host ""
+                $pathChoices = $logConfig.UniqueStaticLogPaths
+                for ($pi = 0; $pi -lt $pathChoices.Count; $pi++) {
+                    Write-Host "  [$($pi + 1)] $($pathChoices[$pi])" -ForegroundColor White
+                }
+                Write-Host ""
+                Write-Host "Which log path should be used? [1-$($pathChoices.Count)] (default: 1): " -NoNewline
+                try {
+                    $pathChoice = Read-Host
+                } catch {
+                    $pathChoice = '1'
+                    Write-Warning "[Stepper] Non-interactive context detected, defaulting to first log path."
+                }
+                $choiceIndex = 0
+                if (-not [int]::TryParse($pathChoice, [ref]$choiceIndex) -or
+                    $choiceIndex -lt 1 -or $choiceIndex -gt $pathChoices.Count) {
+                    $choiceIndex = 1
+                }
+                $resolvedLogPath = $pathChoices[$choiceIndex - 1]
+            } elseif ($logConfig.UniqueStaticLogPaths.Count -eq 1) {
+                $resolvedLogPath = $logConfig.UniqueStaticLogPaths[0]
+            } else {
+                $resolvedLogPath = $defaultLog
+            }
+
+            # Validate parent directory
+            $logDir = Split-Path -Path $resolvedLogPath -Parent
+            if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+                $exception = [System.IO.DirectoryNotFoundException]::new(
+                    "Log file directory does not exist: '$logDir'. Create the directory or omit -LogPath to use the default location.")
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'LogPathDirectoryNotFound',
+                    [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
+                    $resolvedLogPath
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
+            }
+
+            # Resolve NoLog scope
+            $loggingEnabled = $true
+            $noLogIds       = @()
+
+            if ($logConfig.NoLogStepIds.Count -gt 0) {
+                $noLogList = ($logConfig.NoLogStepIds | ForEach-Object {
+                    $parts = $_ -split ':'
+                    "$([System.IO.Path]::GetFileName($parts[0])):$($parts[-1])"
+                }) -join ', '
+
+                Write-Host ""
+                Write-Host "[i] Some steps have -NoLog specified: $noLogList" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  [A] Log all steps — ignore -NoLog flags (Default)" -ForegroundColor Cyan
+                Write-Host "  [S] Skip logging for those steps only" -ForegroundColor White
+                Write-Host "  [N] Disable logging entirely" -ForegroundColor White
+                Write-Host "  [Q] Quit" -ForegroundColor White
+                Write-Host ""
+                Write-Host "Choice? [" -NoNewline
+                Write-Host "A" -NoNewline -ForegroundColor Cyan
+                Write-Host "/s/n/q]: " -NoNewline
+                try {
+                    $noLogChoice = Read-Host
+                } catch {
+                    $noLogChoice = 'a'
+                    Write-Warning "[Stepper] Non-interactive context detected, defaulting to log all steps."
+                }
+
+                switch ($noLogChoice.ToLower()) {
+                    's' {
+                        $noLogIds = @($logConfig.NoLogStepIds)
+                    }
+                    'n' {
+                        $loggingEnabled = $false
+                    }
+                    'q' {
+                        Write-Host ""
+                        Write-Host "Exiting..." -ForegroundColor Yellow
+                        exit
+                    }
+                    default {
+                        # 'a' or anything else — log everything
+                    }
+                }
+            }
+
+            $executionState.LogPath        = $resolvedLogPath
+            $executionState.LoggingEnabled = $loggingEnabled
+            $executionState.NoLogStepIds   = $noLogIds
+        }
+        #EndRegion Log config
 
         # Try to load persisted $Stepper data from state
         if ($existingState -and $existingState.StepperData) {
@@ -609,16 +738,28 @@ function New-Step {
         $stepIdParts = $stepId -split ':'
         $scriptName = Split-Path $stepIdParts[0] -Leaf
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
+        $skipReason = $null
 
         # In restore mode: skip steps until we reach the target
         if ($stepId -eq $executionState.TargetStep) {
             # This is the last completed step, skip it and disable restore mode
             $executionState.RestoreMode = $false
             $shouldExecute = $false
+            $skipReason = 'last completed step'
         }
         elseif ($executionState.RestoreMode) {
             # Still skipping
             $shouldExecute = $false
+            $skipReason = 'previously completed'
+        }
+
+        if ($skipReason -and $executionState.LoggingEnabled -and $executionState.LogPath -and
+            ($executionState.NoLogStepIds -notcontains $stepId)) {
+            $skipInventory = Get-StepInventory -ScriptPath $scriptPath
+            $skipNumber    = $skipInventory.StepLines.IndexOf($stepId) + 1
+            $skipTotal     = $skipInventory.TotalSteps
+            $skipNamePart  = if ($PSCmdlet.ParameterSetName -eq 'Named') { " ('$Name')" } else { '' }
+            Write-StepperLog -Message "Skipping step $skipNumber/$skipTotal$skipNamePart because it already completed in a previous run. ($displayStepId)" -LogPath $executionState.LogPath
         }
     }
 
@@ -637,7 +778,18 @@ function New-Step {
         $currentStepNumber = $stepLines.IndexOf($stepId) + 1
 
         $stepDisplaySuffix = if ($PSCmdlet.ParameterSetName -eq 'Named') { " - '$Name'" } else { '' }
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Executing step $currentStepNumber/$totalSteps$stepDisplaySuffix ($displayStepId)"
+
+        # Resolve logging state for this step
+        $stepLogPath = $executionState.LogPath
+        $stepLoggingEnabled = $executionState.LoggingEnabled -and
+            ($executionState.NoLogStepIds -notcontains $stepId)
+
+        # Runtime -LogPath conflict check
+        if ($LogPath -and $stepLogPath -and $LogPath -ne $stepLogPath) {
+            Write-Warning "New-Step at ${displayStepId}: -LogPath '$LogPath' differs from the resolved log path '$stepLogPath'. Using resolved path."
+        }
+
+        Write-StepperLog -Message "Executing step $currentStepNumber/$totalSteps$stepDisplaySuffix ($displayStepId)" -LogPath $stepLogPath
 
         # Show current $Stepper data
         try {
@@ -661,8 +813,48 @@ function New-Step {
             # Ignore if unable to inject step metadata
         }
 
+        # Transcript setup
+        $transcriptStarted = $false
+        $tempTranscript    = $null
+
+        if (-not $stepLoggingEnabled -and $stepLogPath) {
+            Add-Content -Path $stepLogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
+        }
+
+        if ($stepLoggingEnabled -and $stepLogPath) {
+            if ($Host.UI.IsTranscribing) {
+                Write-Host ""
+                Write-Host "[!] Stepper detected an active transcript. Stop your transcript with Stop-Transcript and re-run the script." -ForegroundColor Magenta
+                Write-Host ""
+                $exception = [System.InvalidOperationException]::new(
+                    'An active PowerShell transcript was detected. Stop the transcript with Stop-Transcript and re-run the script.')
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'TranscriptAlreadyActive',
+                    [System.Management.Automation.ErrorCategory]::ResourceBusy,
+                    $null
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
+            }
+            $tempTranscript = [System.IO.Path]::GetTempFileName()
+            Start-Transcript -Path $tempTranscript -Force | Out-Null
+            $transcriptStarted = $true
+        }
+
         try {
+            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             & $ScriptBlock
+            $stopwatch.Stop()
+            $elapsed = [Math]::Round($stopwatch.Elapsed.TotalSeconds, 2)
+
+            if ($transcriptStarted) {
+                Stop-Transcript | Out-Null
+                $transcriptStarted = $false
+                $transcriptContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
+                Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
+                Add-Content -Path $stepLogPath -Value $transcriptContent
+                Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
+            }
 
             # Update state file after successful execution (including $Stepper data)
             $stepperData = $callingScope.PSVariable.Get('Stepper').Value
@@ -681,14 +873,37 @@ function New-Step {
                 $PSCmdlet.ThrowTerminatingError($errorRecord)
             }
             $completedStepName = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
-            Write-StepperState -StatePath $statePath -ScriptHash $currentHash -LastCompletedStep $stepId -StepName $completedStepName -StepNumber $currentStepNumber -StepperData $stepperData -ScriptContents $scriptContents
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Step $currentStepNumber/$totalSteps completed ($displayStepId)"
+            $splatState = @{
+                StatePath         = $statePath
+                ScriptHash        = $currentHash
+                LastCompletedStep = $stepId
+                StepName          = $completedStepName
+                StepNumber        = $currentStepNumber
+                StepperData       = $stepperData
+                ScriptContents    = $scriptContents
+                LogPath           = $executionState.LogPath
+                LoggingEnabled    = if ($executionState.LoggingEnabled -is [bool]) { $executionState.LoggingEnabled } else { $true }
+                NoLogStepIds      = $executionState.NoLogStepIds
+            }
+            Write-StepperState @splatState
+            Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix completed in ${elapsed}s ($displayStepId)" -LogPath $stepLogPath
 
             if ($stepperData -and $stepperData.Count -gt 0) {
                 Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
             }
         }
         catch {
+            if ($transcriptStarted) {
+                Stop-Transcript | Out-Null
+                $transcriptStarted = $false
+                $partialContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
+                if ($stepLogPath) {
+                    Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT [PARTIAL] ==="
+                    Add-Content -Path $stepLogPath -Value $partialContent
+                    Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT [PARTIAL] ==="
+                }
+            }
+
             $innerMessage = if ($_.Exception.Message) {
                 $_.Exception.Message
             } else {
@@ -698,6 +913,9 @@ function New-Step {
             $location = if ($origin.ScriptName -and $origin.ScriptLineNumber) {
                 "$([System.IO.Path]::GetFileName($origin.ScriptName)):$($origin.ScriptLineNumber)"
             } else { $stepId }
+
+            Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix FAILED at $location`: $innerMessage" -Level 'ERROR' -LogPath $stepLogPath
+
             $exception = [System.Exception]::new("Step failed [$location]: $innerMessage", $_.Exception)
             $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                 $exception,
@@ -706,6 +924,11 @@ function New-Step {
                 $stepId
             )
             $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+        finally {
+            if ($tempTranscript -and (Test-Path -LiteralPath $tempTranscript)) {
+                Remove-Item -LiteralPath $tempTranscript -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }
