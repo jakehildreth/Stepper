@@ -168,7 +168,7 @@ function New-Step {
             $PSCmdlet.ThrowTerminatingError($errorRecord)
         }
 
-        $blockInfo = Find-NewStepBlocks -ScriptLines $scriptLines
+        $blockInfo = Find-NewStepBlocks -ScriptPath $scriptPath
         $newStepBlocks = $blockInfo.NewStepBlocks
         $stopStepperLine = $blockInfo.StopStepperLine
 
@@ -333,38 +333,10 @@ function New-Step {
             # Check if script has been modified
             if ($existingState.ScriptHash -ne $currentHash) {
                 # Script has been modified since last run — prompt user for action
-                try {
-                    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
-                }
-                catch {
-                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        $exception,
-                        'ScriptReadFailed',
-                        [System.Management.Automation.ErrorCategory]::ReadError,
-                        $scriptPath
-                    )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
-                }
-                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-                $totalSteps = $stepMatches.Count
-
-                # Find all step line numbers and names
-                $stepLines = @()
-                $stepNames = @()
-                $lineNumber = 1
-                $lines = $scriptContent -split "`r?`n"
-                foreach ($line in $lines) {
-                    if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
-                        $stepLines += "${scriptPath}:${lineNumber}"
-                        if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
-                            $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-                        } else {
-                            $stepNames += $null
-                        }
-                    }
-                    $lineNumber++
-                }
+                $inventory = Get-StepInventory -ScriptPath $scriptPath
+                $stepLines  = $inventory.StepLines
+                $stepNames  = $inventory.StepNames
+                $totalSteps = $inventory.TotalSteps
 
                 $lastStep = $existingState.LastCompletedStep
                 $lastStepIndex = $stepLines.IndexOf($lastStep)
@@ -485,49 +457,10 @@ function New-Step {
             }
             else {
                 # Count total steps in the script by finding all New-Step calls
-                try {
-                    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
-                }
-                catch {
-                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        $exception,
-                        'ScriptReadFailed',
-                        [System.Management.Automation.ErrorCategory]::ReadError,
-                        $scriptPath
-                    )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
-                }
-                $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-                $totalSteps = $stepMatches.Count
-
-                # Find all step line numbers and names to determine which step number we're on
-                $stepLines = @()
-                $stepNames = @()
-                $lineNumber = 1
-                try {
-                    foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
-                        if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
-                            $stepLines += "${scriptPath}:${lineNumber}"
-                            if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
-                                $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-                            } else {
-                                $stepNames += $null
-                            }
-                        }
-                        $lineNumber++
-                    }
-                }
-                catch {
-                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                        $exception,
-                        'ScriptReadFailed',
-                        [System.Management.Automation.ErrorCategory]::ReadError,
-                        $scriptPath
-                    )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
-                }
+                $inventory = Get-StepInventory -ScriptPath $scriptPath
+                $stepLines  = $inventory.StepLines
+                $stepNames  = $inventory.StepNames
+                $totalSteps = $inventory.TotalSteps
 
                 # Find the index of the last completed step
                 $lastStep = $existingState.LastCompletedStep
@@ -697,49 +630,10 @@ function New-Step {
         $displayStepId = "${scriptName}:$($stepIdParts[1])"
 
         # Calculate step number (X/Y)
-        try {
-            $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
-        }
-        catch {
-            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                $exception,
-                'ScriptReadFailed',
-                [System.Management.Automation.ErrorCategory]::ReadError,
-                $scriptPath
-            )
-            $PSCmdlet.ThrowTerminatingError($errorRecord)
-        }
-        $stepMatches = [regex]::Matches($scriptContent, '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-        $totalSteps = $stepMatches.Count
-
-        # Find all step line numbers and names
-        $stepLines = @()
-        $stepNames = @()
-        $lineNumber = 1
-        try {
-            foreach ($line in (Get-Content -Path $scriptPath -ErrorAction Stop)) {
-                if ($line -match '(?i)^\s*New-Step\s+(?:(?:-Name\s+)?(?:"[^"]*"|''[^'']*'')\s+)?\{') {
-                    $stepLines += "${scriptPath}:${lineNumber}"
-                    if ($line -match '(?i)^\s*New-Step\s+(?:-Name\s+)?(?:"([^"]*)"|''([^'']*)'')') {
-                        $stepNames += if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
-                    } else {
-                        $stepNames += $null
-                    }
-                }
-                $lineNumber++
-            }
-        }
-        catch {
-            $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                $exception,
-                'ScriptReadFailed',
-                [System.Management.Automation.ErrorCategory]::ReadError,
-                $scriptPath
-            )
-            $PSCmdlet.ThrowTerminatingError($errorRecord)
-        }
+        $inventory = Get-StepInventory -ScriptPath $scriptPath
+        $stepLines  = $inventory.StepLines
+        $stepNames  = $inventory.StepNames
+        $totalSteps = $inventory.TotalSteps
         $currentStepNumber = $stepLines.IndexOf($stepId) + 1
 
         $stepDisplaySuffix = if ($PSCmdlet.ParameterSetName -eq 'Named') { " - '$Name'" } else { '' }
