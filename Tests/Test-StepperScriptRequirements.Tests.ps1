@@ -1,5 +1,7 @@
 BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
+    . "$ModulePath/Private/Get-ScriptHash.ps1"
+    . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Get-StepperStatePath.ps1"
     . "$ModulePath/Private/Remove-StepperState.ps1"
     . "$ModulePath/Private/Test-StepperScriptRequirements.ps1"
