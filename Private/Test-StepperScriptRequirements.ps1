@@ -30,11 +30,18 @@ function Test-StepperScriptRequirements {
     }
     $scriptName = Split-Path $ScriptPath -Leaf
 
-    # Check for CmdletBinding
-    $hasCmdletBinding = $scriptLines | Where-Object { $_ -match '^\s*\[CmdletBinding\(\)\]' }
+    # Parse via AST for accurate structural detection
+    $parsedAst = Get-ScriptAst -ScriptPath $ScriptPath
 
-    # Check for #requires statement (case-insensitive)
-    $hasRequires = $scriptLines | Where-Object { $_ -match '(?i)^\s*#requires\s+-Modules?\s+Stepper' }
+    # Check for [CmdletBinding()] on the ParamBlock
+    $hasCmdletBinding = $parsedAst.Ast.ParamBlock -and
+        ($parsedAst.Ast.ParamBlock.Attributes |
+            Where-Object { $_.TypeName.Name -eq 'CmdletBinding' })
+
+    # Check for #requires -Modules Stepper
+    $hasRequires = $parsedAst.Ast.ScriptRequirements -and
+        ($parsedAst.Ast.ScriptRequirements.RequiredModules |
+            Where-Object { $_.Name -eq 'Stepper' })
 
     $needsChanges = -not $hasCmdletBinding -or -not $hasRequires
 
@@ -113,11 +120,20 @@ function Test-StepperScriptRequirements {
                 $newScriptLines += ""
             }
 
-            # Copy remaining lines, but skip existing param() if we added one
-            $skipNextParam = (-not $hasCmdletBinding)
+            # Copy remaining lines, skipping the existing empty param() block if we added one.
+            # Use AST extent to handle both single-line and multi-line empty param blocks.
+            $existingParamStart = -1
+            $existingParamEnd   = -1
+            if (-not $hasCmdletBinding -and
+                $parsedAst.Ast.ParamBlock -and
+                $parsedAst.Ast.ParamBlock.Parameters.Count -eq 0) {
+                $existingParamStart = $parsedAst.Ast.ParamBlock.Extent.StartLineNumber - 1
+                $existingParamEnd   = $parsedAst.Ast.ParamBlock.Extent.EndLineNumber - 1
+            }
             for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) {
-                if ($skipNextParam -and $scriptLines[$i] -match '^\s*param\s*\(\s*\)\s*$') {
-                    $skipNextParam = $false
+                if ($existingParamStart -ge 0 -and
+                    $i -ge $existingParamStart -and
+                    $i -le $existingParamEnd) {
                     continue
                 }
                 $newScriptLines += $scriptLines[$i]
