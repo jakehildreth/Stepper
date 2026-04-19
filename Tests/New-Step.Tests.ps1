@@ -15,6 +15,8 @@ BeforeAll {
     . "$ModulePath/Private/Update-ScriptWithUnmanagedActions.ps1"
     . "$ModulePath/Private/Test-StepperScriptRequirements.ps1"
     . "$ModulePath/Private/Show-MoreDetails.ps1"
+    . "$ModulePath/Private/Write-StepperLog.ps1"
+    . "$ModulePath/Private/Get-StepLogConfig.ps1"
     . "$ModulePath/Public/New-Step.ps1"
 
     # Helper: create a minimal valid stepper script in $TestDrive.
@@ -264,6 +266,9 @@ Describe 'New-Step' -Tag 'Integration' {
                 CurrentScriptPath = $script:ResumeInfo.Path
                 CurrentScriptHash = (Get-ScriptHash -ScriptPath $script:ResumeInfo.Path)
                 StatePath         = $script:ResumeInfo.StatePath
+                LogPath           = $null
+                LoggingEnabled    = $true
+                NoLogStepIds      = @()
             }
 
             $sideEffect = Join-Path $TestDrive "step2-side-$(New-Guid).txt"
@@ -401,6 +406,346 @@ Describe 'New-Step' -Tag 'Integration' {
             $statePath | Should -Exist
             $content = Get-Content -Path $script:NoStopContinuePath -Raw
             $content | Should -Not -Match 'Stop-Stepper'
+        }
+    }
+
+    Context 'Logging — default log path' {
+        BeforeEach {
+            $script:LogDefaultInfo = New-TestStepperScript -BaseName 'log-default'
+            Mock Get-StepIdentifier { "$($script:LogDefaultInfo.Path):$($script:LogDefaultInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Write-StepperLog {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should call Write-StepperLog when a step executes' {
+            New-Step { }
+            Should -Invoke Write-StepperLog -Scope It
+        }
+
+        It 'Should store the resolved log path in execution state' {
+            New-Step { }
+            $expectedLog = "$($script:LogDefaultInfo.Path).stepper.log"
+            $state = Import-Clixml -Path $script:LogDefaultInfo.StatePath
+            $state.LogPath | Should -Be $expectedLog
+        }
+    }
+
+    Context 'Logging — explicit -LogPath parameter' {
+        BeforeEach {
+            $script:LogExplicitInfo = New-TestStepperScript -BaseName 'log-explicit'
+            $script:ExplicitLogPath = Join-Path $TestDrive 'explicit.log'
+            Mock Get-StepIdentifier { "$($script:LogExplicitInfo.Path):$($script:LogExplicitInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:ExplicitLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Write-StepperLog {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should use the explicit log path from Get-StepLogConfig' {
+            New-Step -LogPath $script:ExplicitLogPath { }
+            $state = Import-Clixml -Path $script:LogExplicitInfo.StatePath
+            $state.LogPath | Should -Be $script:ExplicitLogPath
+        }
+    }
+
+    Context 'Logging — conflicting -LogPath values prompt user' {
+        BeforeEach {
+            $script:ConflictInfo = New-TestStepperScript -BaseName 'log-conflict'
+            Mock Get-StepIdentifier { "$($script:ConflictInfo.Path):$($script:ConflictInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig {
+                [PSCustomObject]@{
+                    UniqueStaticLogPaths = @((Join-Path $TestDrive 'a.log'), (Join-Path $TestDrive 'b.log'))
+                    HasConflict          = $true
+                    NoLogStepIds         = @()
+                }
+            }
+            Mock Write-StepperLog {}
+            Mock Read-Host { '1' }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should prompt the user when -LogPath conflicts are detected' {
+            New-Step { }
+            Should -Invoke Read-Host -Scope It
+        }
+    }
+
+    Context 'Logging — runtime -LogPath mismatch writes warning' {
+        BeforeEach {
+            $script:MismatchInfo = New-TestStepperScript -BaseName 'log-mismatch'
+            $script:ResolvedLog = Join-Path $TestDrive 'resolved.log'
+            Mock Get-StepIdentifier { "$($script:MismatchInfo.Path):$($script:MismatchInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:ResolvedLog); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Write-StepperLog {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write a warning when -LogPath differs from the resolved path' {
+            $differentPath = Join-Path $TestDrive 'different.log'
+            $warnings = New-Step -LogPath $differentPath { } 3>&1
+            $warnings | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'Logging — active transcript causes hard stop' {
+        BeforeEach {
+            $script:TranscriptInfo = New-TestStepperScript -BaseName 'log-transcript'
+            Mock Get-StepIdentifier { "$($script:TranscriptInfo.Path):$($script:TranscriptInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Write-StepperLog {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should throw TranscriptAlreadyActive when host transcript is active' -Skip:($true) {
+            # $Host.UI.IsTranscribing cannot be mocked via Pester Mock on a live host object.
+            # Covered by manual verification: run a script with an active transcript and
+            # confirm Stepper halts with ErrorId 'TranscriptAlreadyActive'.
+        }
+
+        It 'Should throw with ErrorId TranscriptAlreadyActive when transcript is active' -Skip:($true) {
+            # Skipped: $Host.UI.IsTranscribing cannot be mocked via Pester Mock
+            # Covered by manual verification and ADR documentation
+        }
+    }
+
+    Context 'Logging — transcript section in log file' {
+        BeforeEach {
+            $script:TranscriptLogInfo = New-TestStepperScript -BaseName 'log-transcript-section'
+            $script:TranscriptLogPath = Join-Path $TestDrive 'transcript-test.log'
+            Mock Get-StepIdentifier { "$($script:TranscriptLogInfo.Path):$($script:TranscriptLogInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:TranscriptLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write a transcript section header to the log on successful step' {
+            New-Step { Write-Output 'step output' }
+            $logContent = Get-Content -Path $script:TranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '=== BEGIN STEP \d+ TRANSCRIPT ==='
+        }
+
+        It 'Should write a transcript section footer to the log on successful step' {
+            New-Step { Write-Output 'step output' }
+            $logContent = Get-Content -Path $script:TranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '=== END STEP \d+ TRANSCRIPT ==='
+        }
+
+        It 'Should write elapsed time to the log on successful step' {
+            New-Step { Write-Output 'step output' }
+            $logContent = Get-Content -Path $script:TranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'completed in \d+\.?\d*s'
+        }
+    }
+
+    Context 'Logging — failure writes ERROR entry to log' {
+        BeforeEach {
+            $script:FailLogInfo = New-TestStepperScript -BaseName 'log-fail'
+            $script:FailLogPath = Join-Path $TestDrive 'fail-test.log'
+            Mock Get-StepIdentifier { "$($script:FailLogInfo.Path):$($script:FailLogInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:FailLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write an [ERROR] entry to the log when a step throws' {
+            try {
+                New-Step { throw 'simulated failure' }
+            } catch { }
+            $logContent = Get-Content -Path $script:FailLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '\[ERROR\]'
+        }
+
+        It 'Should write a PARTIAL transcript section on failure' {
+            try {
+                New-Step { Write-Output 'before failure'; throw 'simulated failure' }
+            } catch { }
+            $logContent = Get-Content -Path $script:FailLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '\[PARTIAL\]'
+        }
+
+        It 'Should still throw the terminating error after logging failure' {
+            { New-Step { throw 'simulated failure' } } | Should -Throw
+        }
+    }
+
+    Context 'Logging — skipped steps written to log on resume' {
+        BeforeEach {
+            $script:SkipLogInfo  = New-TestStepperScript -BaseName "log-skip-$(New-Guid)" -StepCount 2
+            $script:SkipLogPath  = Join-Path $TestDrive 'skip-test.log'
+            $step1Id = "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine)"
+            $scriptHash = Get-ScriptHash -ScriptPath $script:SkipLogInfo.Path
+            Write-StepperState -StatePath $script:SkipLogInfo.StatePath `
+                -ScriptHash $scriptHash `
+                -LastCompletedStep $step1Id `
+                -StepNumber 1
+
+            $script:SkipLogCallCount = 0
+            Mock Get-StepIdentifier {
+                $script:SkipLogCallCount++
+                if ($script:SkipLogCallCount -eq 1) {
+                    "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine)"
+                } else {
+                    "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine + 1)"
+                }
+            }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:SkipLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Read-Host { 'R' }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write a SKIPPED section for a previously completed step' {
+            New-Step { }   # step 1 — skipped (last completed)
+            New-Step { }   # step 2 — runs
+            $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '=== STEP \d+ SKIPPED ==='
+        }
+
+        It 'Should write a Skipping log entry for a previously completed step' {
+            New-Step { }
+            New-Step { }
+            $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'Skipping step \d+/\d+'
+        }
+
+        It 'Should include step name in the SKIPPED section for a named step' {
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $namedSkipInfo = New-TestStepperScript -BaseName "log-skip-named-$(New-Guid)" -StepCount 2
+            $namedStep1Id  = "$($namedSkipInfo.Path):$($namedSkipInfo.FirstStepLine)"
+            $namedHash     = Get-ScriptHash -ScriptPath $namedSkipInfo.Path
+            Write-StepperState -StatePath $namedSkipInfo.StatePath `
+                -ScriptHash $namedHash `
+                -LastCompletedStep $namedStep1Id `
+                -StepNumber 1
+
+            $namedSkipCallCount = 0
+            Mock Get-StepIdentifier {
+                $namedSkipCallCount++
+                if ($namedSkipCallCount -eq 1) {
+                    "$($namedSkipInfo.Path):$($namedSkipInfo.FirstStepLine)"
+                } else {
+                    "$($namedSkipInfo.Path):$($namedSkipInfo.FirstStepLine + 1)"
+                }
+            }
+            $namedSkipLog = Join-Path $TestDrive 'skip-named.log'
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($namedSkipLog); HasConflict = $false; NoLogStepIds = @() } }
+
+            New-Step 'Provision Infra' { }
+            New-Step { }
+            $logContent = Get-Content -Path $namedSkipLog -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match "=== STEP \d+ - 'Provision Infra' SKIPPED ==="
+        }
+    }
+
+    Context 'Logging — -NoLog step scope prompt' {
+        BeforeEach {
+            $script:NoLogInfo = New-TestStepperScript -BaseName 'log-nolog'
+            Mock Get-StepIdentifier { "$($script:NoLogInfo.Path):$($script:NoLogInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig {
+                [PSCustomObject]@{
+                    UniqueStaticLogPaths = @()
+                    HasConflict          = $false
+                    NoLogStepIds         = @("$($script:NoLogInfo.Path):$($script:NoLogInfo.FirstStepLine)")
+                }
+            }
+            Mock Write-StepperLog {}
+            Mock Read-Host { 'S' }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should prompt the user when -NoLog is present on a step' {
+            New-Step -NoLog { }
+            Should -Invoke Read-Host -Scope It
+        }
+
+        It 'Should store the NoLogStepIds in execution state when user chooses S' {
+            New-Step -NoLog { }
+            $state = Import-Clixml -Path $script:NoLogInfo.StatePath
+            $state.NoLogStepIds | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'Logging — step name included in log messages' {
+        BeforeEach {
+            $script:NamedLogInfo = New-TestStepperScript -BaseName 'log-named-step'
+            $script:NamedLogPath = Join-Path $TestDrive 'named-step.log'
+            Remove-Item -LiteralPath $script:NamedLogPath -Force -ErrorAction SilentlyContinue
+            Mock Get-StepIdentifier { "$($script:NamedLogInfo.Path):$($script:NamedLogInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:NamedLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should include step name in the Executing log entry' {
+            New-Step 'My Named Step' { Write-Output 'hello' }
+            $logContent = Get-Content -Path $script:NamedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match "Executing.*My Named Step"
+        }
+
+        It 'Should include step name in the completed log entry' {
+            New-Step 'My Named Step' { Write-Output 'hello' }
+            $logContent = Get-Content -Path $script:NamedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match "My Named Step.*completed"
+        }
+
+        It 'Should include step name in transcript section headers' {
+            New-Step 'My Named Step' { Write-Output 'hello' }
+            $logContent = Get-Content -Path $script:NamedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match "BEGIN STEP \d+.*My Named Step.*TRANSCRIPT"
+        }
+
+        It 'Should not include a name suffix for unnamed steps' {
+            New-Step { Write-Output 'hello' }
+            $logContent = Get-Content -Path $script:NamedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Not -Match "Executing.*-\s*'"
+        }
+    }
+
+    Context 'Logging — skipped steps written to log on resume' {
+        BeforeEach {
+            $script:SkipLogInfo = New-TestStepperScript -BaseName "log-skip-$(New-Guid)" -StepCount 2
+            $script:SkipLogPath = Join-Path $TestDrive 'skip-test.log'
+            $step1Id = "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine)"
+            $scriptHash = Get-ScriptHash -ScriptPath $script:SkipLogInfo.Path
+            Write-StepperState -StatePath $script:SkipLogInfo.StatePath `
+                -ScriptHash $scriptHash `
+                -LastCompletedStep $step1Id `
+                -StepNumber 1 `
+                -LogPath $script:SkipLogPath `
+                -LoggingEnabled $true `
+                -NoLogStepIds @()
+
+            $script:SkipCallCount = 0
+            Mock Get-StepIdentifier {
+                $script:SkipCallCount++
+                if ($script:SkipCallCount -eq 1) {
+                    "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine)"
+                } else {
+                    "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine + 1)"
+                }
+            }
+            Mock Read-Host { 'R' }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write a SKIPPED marker to the log for a skipped step' {
+            New-Step { }
+            $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'SKIPPED'
+        }
+
+        It 'Should include the skip reason in the log entry' {
+            New-Step { }
+            $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'previously completed|last completed step'
         }
     }
 }

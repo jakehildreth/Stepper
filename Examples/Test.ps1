@@ -1,6 +1,6 @@
 Write-Output 'This code is useless. Delete it!' | Out-Null
 
-New-Step {
+New-Step 'Get user''s name' {
     $Stepper.Name = Read-Host 'Enter your name'
 }
 
@@ -11,7 +11,7 @@ $Stepper.ProcessCount = (Get-Process).Count
 $Stepper.ItemCount = (Get-ChildItem).Count
 $Stepper.CollectionTime = Get-Date
 
-New-Step {
+New-Step -NoLog {
     $response = Read-Host 'Do you want to simulate a crash? [Y/n]'
     if ($response -eq '' -or $response -eq 'Y' -or $response -eq 'y') {
         Write-Host ""

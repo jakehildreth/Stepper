@@ -63,6 +63,44 @@ Describe 'Write-StepperState' -Tag 'Unit' {
             $state = Import-Clixml -Path $StatePath
             $state.ScriptContents | Should -Be $contents
         }
+
+        It 'Should persist LogPath when provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10' -LogPath 'C:\logs\run.log'
+            $state = Import-Clixml -Path $StatePath
+            $state.LogPath | Should -Be 'C:\logs\run.log'
+        }
+
+        It 'Should persist LogPath as null when not provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10'
+            $state = Import-Clixml -Path $StatePath
+            $state.LogPath | Should -BeNullOrEmpty
+        }
+
+        It 'Should persist LoggingEnabled = $true when provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10' -LoggingEnabled $true
+            $state = Import-Clixml -Path $StatePath
+            $state.LoggingEnabled | Should -BeTrue
+        }
+
+        It 'Should persist LoggingEnabled = $false when provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10' -LoggingEnabled $false
+            $state = Import-Clixml -Path $StatePath
+            $state.LoggingEnabled | Should -BeFalse
+        }
+
+        It 'Should persist NoLogStepIds array when provided' {
+            $ids = @('/tmp/test.ps1:5', '/tmp/test.ps1:12')
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10' -NoLogStepIds $ids
+            $state = Import-Clixml -Path $StatePath
+            $state.NoLogStepIds | Should -Contain '/tmp/test.ps1:5'
+            $state.NoLogStepIds | Should -Contain '/tmp/test.ps1:12'
+        }
+
+        It 'Should persist NoLogStepIds as null when not provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10'
+            $state = Import-Clixml -Path $StatePath
+            $state.NoLogStepIds | Should -BeNullOrEmpty
+        }
     }
 
     Context 'When Export-Clixml fails' {

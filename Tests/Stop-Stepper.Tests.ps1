@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Write-StepperState.ps1"
     . "$ModulePath/Private/Read-StepperState.ps1"
     . "$ModulePath/Private/Remove-StepperState.ps1"
+    . "$ModulePath/Private/Write-StepperLog.ps1"
     . "$ModulePath/Public/Stop-Stepper.ps1"
 
     # On macOS, $TestDrive resolves to /private/tmp/… which matches the
@@ -198,6 +199,84 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         It 'Does not rethrow' {
             Mock Write-Error {}
             { Stop-Stepper } | Should -Not -Throw
+        }
+    }
+
+    Context 'Logging — summary entry written on completion' {
+        BeforeEach {
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1"
+
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $modulePath = $ModulePath
+            $fakeUser   = $script:FakeUserScript
+            $frames = @(
+                [PSCustomObject]@{
+                    ScriptName       = "${modulePath}${sep}Public${sep}Stop-Stepper.ps1"
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                },
+                [PSCustomObject]@{
+                    ScriptName       = $fakeUser
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                }
+            )
+            Mock Get-PSCallStack -MockWith { $frames }.GetNewClosure()
+            Mock Write-StepperLog {}
+        }
+
+        It 'Should call Write-StepperLog on successful completion' {
+            Stop-Stepper
+            Should -Invoke Write-StepperLog -Scope It
+        }
+
+        It 'Should log the completion message' {
+            Stop-Stepper
+            Should -Invoke Write-StepperLog -Scope It -ParameterFilter {
+                $Message -match 'All steps complete'
+            }
+        }
+    }
+
+    Context 'Logging — reads LogPath from execution state' {
+        BeforeEach {
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1"
+
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $modulePath = $ModulePath
+            $fakeUser   = $script:FakeUserScript
+            $frames = @(
+                [PSCustomObject]@{
+                    ScriptName       = "${modulePath}${sep}Public${sep}Stop-Stepper.ps1"
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                },
+                [PSCustomObject]@{
+                    ScriptName       = $fakeUser
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                }
+            )
+            Mock Get-PSCallStack -MockWith { $frames }.GetNewClosure()
+            Mock Write-StepperLog {}
+
+            # Inject execution state with a known LogPath
+            $__StepperExecutionState = @{
+                CurrentScriptPath = $fakeUser
+                LogPath           = Join-Path $TestDrive 'injected.log'
+                LoggingEnabled    = $true
+                NoLogStepIds      = @()
+            }
+        }
+
+        It 'Should pass the LogPath from execution state to Write-StepperLog' {
+            $expectedLog = Join-Path $TestDrive 'injected.log'
+            Stop-Stepper
+            Should -Invoke Write-StepperLog -Scope It -ParameterFilter {
+                $LogPath -eq $expectedLog
+            }
         }
     }
 }

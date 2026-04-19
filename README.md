@@ -44,6 +44,8 @@ Stop-Stepper   # removes the state file on successful completion
 
 If the script fails inside a `New-Step` block, the next run resumes at the step that failed. All previously completed steps are skipped!
 
+Stepper also logs every step — execution timing, host output, and a per-step transcript — to `<scriptname>.ps1.stepper.log` by default. No configuration required.
+
 ---
 
 ## Demo
@@ -59,6 +61,7 @@ Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://char
 - [How It Works](Docs/how-it-works.md) — execution lifecycle, resume logic, verbose output, non-interactive mode
 - [Named Steps](Docs/named-steps.md) — step names, `$Stepper.StepName`, resume prompt formats
 - [Data Persistence](Docs/data-persistence.md) — `$Stepper` hashtable, state file schema
+- [Logging](Docs/logging.md) — log files, step transcripts, `-LogPath`, `-NoLog`
 - [Unmanaged Code](Docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
 - [API Reference](Docs/api-reference.md) — `New-Step`, `Stop-Stepper`, error handling
 - [Examples](Docs/examples.md)
