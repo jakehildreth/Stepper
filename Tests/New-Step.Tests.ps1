@@ -599,18 +599,18 @@ Describe 'New-Step' -Tag 'Integration' {
             Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
         }
 
-        It 'Should write a SKIPPED section for a previously completed step' {
+        It 'Should write a Skipping log entry for a previously completed step' {
             New-Step { }   # step 1 — skipped (last completed)
             New-Step { }   # step 2 — runs
             $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
-            $logContent | Should -Match '=== STEP \d+ SKIPPED ==='
+            $logContent | Should -Match 'Skipping step \d+/\d+'
         }
 
-        It 'Should write a Skipping log entry for a previously completed step' {
+        It 'Should state that the step already completed in a previous run' {
             New-Step { }
             New-Step { }
             $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
-            $logContent | Should -Match 'Skipping step \d+/\d+'
+            $logContent | Should -Match 'already completed in a previous run'
         }
 
         It 'Should include step name in the SKIPPED section for a named step' {
@@ -639,7 +639,7 @@ Describe 'New-Step' -Tag 'Integration' {
             New-Step 'Provision Infra' { }
             New-Step { }
             $logContent = Get-Content -Path $namedSkipLog -Raw -ErrorAction SilentlyContinue
-            $logContent | Should -Match "=== STEP \d+ - 'Provision Infra' SKIPPED ==="
+            $logContent | Should -Match "Skipping step \d+/\d+.*'Provision Infra'.*already completed"
         }
     }
 
@@ -669,6 +669,38 @@ Describe 'New-Step' -Tag 'Integration' {
             New-Step -NoLog { }
             $state = Import-Clixml -Path $script:NoLogInfo.StatePath
             $state.NoLogStepIds | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'Logging — disabled-step marker written to log' {
+        BeforeEach {
+            $script:DisabledLogInfo = New-TestStepperScript -BaseName 'log-disabled'
+            $script:DisabledLogPath = Join-Path $TestDrive 'disabled-step.log'
+            Remove-Item -LiteralPath $script:DisabledLogPath -Force -ErrorAction SilentlyContinue
+            $stepId = "$($script:DisabledLogInfo.Path):$($script:DisabledLogInfo.FirstStepLine)"
+            Mock Get-StepIdentifier { $stepId }
+            Mock Get-StepLogConfig {
+                [PSCustomObject]@{
+                    UniqueStaticLogPaths = @($script:DisabledLogPath)
+                    HasConflict          = $false
+                    NoLogStepIds         = @($stepId)
+                }
+            }
+            Mock Read-Host { 'S' }
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write a LOGGING DISABLED BY USER marker to the log when logging is off for a step' {
+            New-Step -NoLog { Write-Output 'should not appear in transcript' }
+            $logContent = Get-Content -Path $script:DisabledLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'LOGGING DISABLED BY USER'
+        }
+
+        It 'Should not write a transcript section when logging is disabled for a step' {
+            New-Step -NoLog { Write-Output 'should not appear in transcript' }
+            $logContent = Get-Content -Path $script:DisabledLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Not -Match 'BEGIN STEP'
         }
     }
 
@@ -736,16 +768,16 @@ Describe 'New-Step' -Tag 'Integration' {
             Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
         }
 
-        It 'Should write a SKIPPED marker to the log for a skipped step' {
+        It 'Should write a Skipping log entry to the log for a skipped step' {
             New-Step { }
             $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
-            $logContent | Should -Match 'SKIPPED'
+            $logContent | Should -Match 'Skipping step \d+/\d+'
         }
 
-        It 'Should include the skip reason in the log entry' {
-            New-Step { }
+        It 'Should include step name in the Skipping entry for a named step' {
+            New-Step 'Provision Infra' { }
             $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
-            $logContent | Should -Match 'previously completed|last completed step'
+            $logContent | Should -Match "'Provision Infra'"
         }
     }
 }

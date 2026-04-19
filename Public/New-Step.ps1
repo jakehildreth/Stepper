@@ -758,10 +758,8 @@ function New-Step {
             $skipInventory = Get-StepInventory -ScriptPath $scriptPath
             $skipNumber    = $skipInventory.StepLines.IndexOf($stepId) + 1
             $skipTotal     = $skipInventory.TotalSteps
-            $skipSuffix    = if ($PSCmdlet.ParameterSetName -eq 'Named') { " - '$Name'" } else { '' }
-            Write-StepperLog -Message "Skipping step $skipNumber/$skipTotal$skipSuffix ($skipReason) ($displayStepId)" -LogPath $executionState.LogPath
-            Add-Content -Path $executionState.LogPath -Value "=== STEP $skipNumber$skipSuffix SKIPPED ==="
-            Add-Content -Path $executionState.LogPath -Value ''
+            $skipNamePart  = if ($PSCmdlet.ParameterSetName -eq 'Named') { " ('$Name')" } else { '' }
+            Write-StepperLog -Message "Skipping step $skipNumber/$skipTotal$skipNamePart because it already completed in a previous run. ($displayStepId)" -LogPath $executionState.LogPath
         }
     }
 
@@ -818,6 +816,11 @@ function New-Step {
         # Transcript setup
         $transcriptStarted = $false
         $tempTranscript    = $null
+
+        if (-not $stepLoggingEnabled -and $stepLogPath) {
+            Add-Content -Path $stepLogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
+            Add-Content -Path $stepLogPath -Value ''
+        }
 
         if ($stepLoggingEnabled -and $stepLogPath) {
             if ($Host.UI.IsTranscribing) {
