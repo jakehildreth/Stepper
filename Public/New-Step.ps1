@@ -819,7 +819,6 @@ function New-Step {
 
         if (-not $stepLoggingEnabled -and $stepLogPath) {
             Add-Content -Path $stepLogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
-            Add-Content -Path $stepLogPath -Value ''
         }
 
         if ($stepLoggingEnabled -and $stepLogPath) {
