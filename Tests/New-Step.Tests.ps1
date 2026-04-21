@@ -1146,4 +1146,57 @@ Describe 'New-Step' -Tag 'Integration' {
             $warnings | Where-Object { $_ -match '-MaxRetries.*-Retry|-Retry.*-MaxRetries' } | Should -BeNullOrEmpty
         }
     }
+
+    Context 'Retry — visual indicator on Write-Host' {
+        BeforeEach {
+            $script:VisualIndicatorInfo = New-TestStepperScript -BaseName "retry-visual-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:VisualIndicatorInfo.Path):$($script:VisualIndicatorInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Mock Write-Host
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Displays [>] retry indicator when a retry occurs' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 2 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            Assert-MockCalled Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 1 -Scope It
+        }
+
+        It 'Includes wait time in retry indicator message' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 10 -MaxRetries 2 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            Assert-MockCalled Write-Host -ParameterFilter { $Object -match 'Retrying in \d+s' } -Exactly 1 -Scope It
+        }
+
+        It 'Includes attempt number in retry indicator message' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            Assert-MockCalled Write-Host -ParameterFilter { $Object -match 'attempt 2 of' } -Exactly 1 -Scope It
+        }
+
+        It 'Does not display retry indicator when retry is not enabled' {
+            New-Step { }
+            Assert-MockCalled Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 0 -Scope It
+        }
+
+        It 'Displays retry indicator with Yellow foreground color' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 2 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            Assert-MockCalled Write-Host -ParameterFilter { $ForegroundColor -eq 'Yellow' } -Exactly 1 -Scope It
+        }
+    }
 }

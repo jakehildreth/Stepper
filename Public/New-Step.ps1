@@ -971,6 +971,7 @@ function New-Step {
                 if ($Retry.IsPresent -and $retryAttempt -lt $MaxRetries) {
                     $waitSeconds = [int]($RetryInterval * [Math]::Pow(2, $retryAttempt))
                     Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix failed (attempt $($retryAttempt + 1)/$MaxRetries) at $location`: $innerMessage. Retrying in ${waitSeconds}s..." -Level 'WARN' -LogPath $stepLogPath
+                    Write-Host "[>] Retrying in ${waitSeconds}s (attempt $($retryAttempt + 2) of $($MaxRetries + 1))..." -ForegroundColor Yellow
                     Start-Sleep -Seconds $waitSeconds
                     $retryAttempt++
                 } else {
