@@ -25,4 +25,16 @@ New-Step -NoLog {
 Write-Output "Make this code resumable. Wrap it in New-Step {}." | Out-Null
 Write-Host "There are $($Stepper.ItemCount) items in this directory."
 
-#
+New-Step 'Retry example with exponential backoff' -Retry -RetryInterval 2 -MaxRetries 3 {
+    Write-Host "Attempting operation..."
+    # Simulate a transient failure (fails first 2 times, succeeds on 3rd)
+    if ($null -eq $Stepper.RetryAttempt) {
+        $Stepper.RetryAttempt = 0
+    }
+    $Stepper.RetryAttempt++
+    
+    if ($Stepper.RetryAttempt -lt 3) {
+        throw "Transient error (attempt $($Stepper.RetryAttempt)). Will retry..."
+    }
+    Write-Host "Success on attempt $($Stepper.RetryAttempt)!"
+}
