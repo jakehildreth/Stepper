@@ -29,6 +29,20 @@ function New-Step {
         user at init time to choose whether to ignore the flag (log all steps), skip only
         the flagged steps, or disable logging entirely.
 
+    .PARAMETER Retry
+        Enables exponential backoff retry behavior for this step. When specified, a failed
+        ScriptBlock will be retried up to -MaxRetries times before the step is considered
+        failed.
+
+    .PARAMETER RetryInterval
+        Base interval in seconds between retry attempts. Each subsequent retry waits
+        RetryInterval * 2^attempt seconds. Defaults to 60. Requires -Retry. Minimum value: 1.
+
+    .PARAMETER MaxRetries
+        Maximum number of retry attempts after the initial failure. A value of 5 means the
+        ScriptBlock may execute up to 6 times total (1 initial + 5 retries). Defaults to 5.
+        Requires -Retry. Minimum value: 1.
+
     .EXAMPLE
         New-Step 'Download Files' {
             Write-Host "Downloading files..."
@@ -65,7 +79,18 @@ function New-Step {
         [string]$LogPath,
 
         [Parameter()]
-        [switch]$NoLog
+        [switch]$NoLog,
+
+        [Parameter()]
+        [switch]$Retry,
+
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$RetryInterval = 60,
+
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$MaxRetries = 5
     )
 
     # Inherit verbose preference by walking the call stack
@@ -813,14 +838,21 @@ function New-Step {
             # Ignore if unable to inject step metadata
         }
 
-        # Transcript setup
-        $transcriptStarted = $false
-        $tempTranscript    = $null
+        # Warn if retry-related params are specified without -Retry
+        if (-not $Retry.IsPresent) {
+            if ($PSBoundParameters.ContainsKey('RetryInterval')) {
+                Write-Warning "New-Step at ${displayStepId}: -RetryInterval has no effect without -Retry."
+            }
+            if ($PSBoundParameters.ContainsKey('MaxRetries')) {
+                Write-Warning "New-Step at ${displayStepId}: -MaxRetries has no effect without -Retry."
+            }
+        }
 
         if (-not $stepLoggingEnabled -and $stepLogPath) {
             Add-Content -Path $stepLogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
         }
 
+        # Check for active transcript once before any retry attempts
         if ($stepLoggingEnabled -and $stepLogPath) {
             if ($Host.UI.IsTranscribing) {
                 Write-Host ""
@@ -836,99 +868,129 @@ function New-Step {
                 )
                 $PSCmdlet.ThrowTerminatingError($errorRecord)
             }
-            $tempTranscript = [System.IO.Path]::GetTempFileName()
-            Start-Transcript -Path $tempTranscript -Force | Out-Null
-            $transcriptStarted = $true
         }
 
-        try {
-            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-            & $ScriptBlock
-            $stopwatch.Stop()
-            $elapsed = [Math]::Round($stopwatch.Elapsed.TotalSeconds, 2)
+        $retryAttempt   = 0
+        $stepSucceeded  = $false
+        $totalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-            if ($transcriptStarted) {
-                Stop-Transcript | Out-Null
-                $transcriptStarted = $false
-                $transcriptContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
-                Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
-                Add-Content -Path $stepLogPath -Value $transcriptContent
-                Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
+        do {
+            $transcriptStarted = $false
+            $tempTranscript    = $null
+
+            if ($stepLoggingEnabled -and $stepLogPath) {
+                $tempTranscript = [System.IO.Path]::GetTempFileName()
+                Start-Transcript -Path $tempTranscript -Force | Out-Null
+                $transcriptStarted = $true
             }
 
-            # Update state file after successful execution (including $Stepper data)
-            $stepperData = $callingScope.PSVariable.Get('Stepper').Value
-            # Persist state including the script contents for better change inspection
             try {
-                $scriptContents = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+                $attemptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                & $ScriptBlock
+                $attemptStopwatch.Stop()
+                $totalStopwatch.Stop()
+                $elapsed      = [Math]::Round($attemptStopwatch.Elapsed.TotalSeconds, 2)
+                $totalElapsed = [Math]::Round($totalStopwatch.Elapsed.TotalSeconds, 2)
+
+                if ($transcriptStarted) {
+                    Stop-Transcript | Out-Null
+                    $transcriptStarted = $false
+                    $transcriptContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
+                    Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
+                    Add-Content -Path $stepLogPath -Value $transcriptContent
+                    Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
+                }
+
+                # Update state file after successful execution (including $Stepper data)
+                $stepperData = $callingScope.PSVariable.Get('Stepper').Value
+                # Persist state including the script contents for better change inspection
+                try {
+                    $scriptContents = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+                }
+                catch {
+                    $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'ScriptReadFailed',
+                        [System.Management.Automation.ErrorCategory]::ReadError,
+                        $scriptPath
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                }
+                $completedStepName = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
+                $splatState = @{
+                    StatePath         = $statePath
+                    ScriptHash        = $currentHash
+                    LastCompletedStep = $stepId
+                    StepName          = $completedStepName
+                    StepNumber        = $currentStepNumber
+                    StepperData       = $stepperData
+                    ScriptContents    = $scriptContents
+                    LogPath           = $executionState.LogPath
+                    LoggingEnabled    = if ($executionState.LoggingEnabled -is [bool]) { $executionState.LoggingEnabled } else { $true }
+                    NoLogStepIds      = $executionState.NoLogStepIds
+                }
+                Write-StepperState @splatState
+
+                $completionMessage = if ($Retry.IsPresent -and $retryAttempt -gt 0) {
+                    "Step $currentStepNumber/$totalSteps$stepDisplaySuffix completed in ${elapsed}s (attempt $($retryAttempt + 1), total wall time ${totalElapsed}s) ($displayStepId)"
+                } else {
+                    "Step $currentStepNumber/$totalSteps$stepDisplaySuffix completed in ${elapsed}s ($displayStepId)"
+                }
+                Write-StepperLog -Message $completionMessage -LogPath $stepLogPath
+
+                if ($stepperData -and $stepperData.Count -gt 0) {
+                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
+                }
+
+                $stepSucceeded = $true
             }
             catch {
-                $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                    $exception,
-                    'ScriptReadFailed',
-                    [System.Management.Automation.ErrorCategory]::ReadError,
-                    $scriptPath
-                )
-                $PSCmdlet.ThrowTerminatingError($errorRecord)
-            }
-            $completedStepName = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
-            $splatState = @{
-                StatePath         = $statePath
-                ScriptHash        = $currentHash
-                LastCompletedStep = $stepId
-                StepName          = $completedStepName
-                StepNumber        = $currentStepNumber
-                StepperData       = $stepperData
-                ScriptContents    = $scriptContents
-                LogPath           = $executionState.LogPath
-                LoggingEnabled    = if ($executionState.LoggingEnabled -is [bool]) { $executionState.LoggingEnabled } else { $true }
-                NoLogStepIds      = $executionState.NoLogStepIds
-            }
-            Write-StepperState @splatState
-            Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix completed in ${elapsed}s ($displayStepId)" -LogPath $stepLogPath
+                if ($transcriptStarted) {
+                    Stop-Transcript | Out-Null
+                    $transcriptStarted = $false
+                    $partialContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
+                    if ($stepLogPath) {
+                        $attemptLabel = if ($Retry.IsPresent) { " [ATTEMPT $($retryAttempt + 1) PARTIAL]" } else { ' [PARTIAL]' }
+                        Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT$attemptLabel ==="
+                        Add-Content -Path $stepLogPath -Value $partialContent
+                        Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT$attemptLabel ==="
+                    }
+                }
 
-            if ($stepperData -and $stepperData.Count -gt 0) {
-                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
-            }
-        }
-        catch {
-            if ($transcriptStarted) {
-                Stop-Transcript | Out-Null
-                $transcriptStarted = $false
-                $partialContent = Get-Content -Path $tempTranscript -Raw -ErrorAction SilentlyContinue
-                if ($stepLogPath) {
-                    Add-Content -Path $stepLogPath -Value "=== BEGIN STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT [PARTIAL] ==="
-                    Add-Content -Path $stepLogPath -Value $partialContent
-                    Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT [PARTIAL] ==="
+                $innerMessage = if ($_.Exception.Message) {
+                    $_.Exception.Message
+                } else {
+                    $_.ToString()
+                }
+                $origin = $_.InvocationInfo
+                $location = if ($origin.ScriptName -and $origin.ScriptLineNumber) {
+                    "$([System.IO.Path]::GetFileName($origin.ScriptName)):$($origin.ScriptLineNumber)"
+                } else { $stepId }
+
+                if ($Retry.IsPresent -and $retryAttempt -lt $MaxRetries) {
+                    $waitSeconds = [int]($RetryInterval * [Math]::Pow(2, $retryAttempt))
+                    Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix failed (attempt $($retryAttempt + 1)/$MaxRetries) at $location`: $innerMessage. Retrying in ${waitSeconds}s..." -Level 'WARN' -LogPath $stepLogPath
+                    Start-Sleep -Seconds $waitSeconds
+                    $retryAttempt++
+                } else {
+                    Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix FAILED at $location`: $innerMessage" -Level 'ERROR' -LogPath $stepLogPath
+
+                    $exception = [System.Exception]::new("Step failed [$location]: $innerMessage", $_.Exception)
+                    $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                        $exception,
+                        'StepExecutionFailed',
+                        [System.Management.Automation.ErrorCategory]::OperationStopped,
+                        $stepId
+                    )
+                    $PSCmdlet.ThrowTerminatingError($errorRecord)
                 }
             }
-
-            $innerMessage = if ($_.Exception.Message) {
-                $_.Exception.Message
-            } else {
-                $_.ToString()
+            finally {
+                if ($tempTranscript -and (Test-Path -LiteralPath $tempTranscript)) {
+                    Remove-Item -LiteralPath $tempTranscript -Force -ErrorAction SilentlyContinue
+                }
             }
-            $origin = $_.InvocationInfo
-            $location = if ($origin.ScriptName -and $origin.ScriptLineNumber) {
-                "$([System.IO.Path]::GetFileName($origin.ScriptName)):$($origin.ScriptLineNumber)"
-            } else { $stepId }
-
-            Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix FAILED at $location`: $innerMessage" -Level 'ERROR' -LogPath $stepLogPath
-
-            $exception = [System.Exception]::new("Step failed [$location]: $innerMessage", $_.Exception)
-            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                $exception,
-                'StepExecutionFailed',
-                [System.Management.Automation.ErrorCategory]::OperationStopped,
-                $stepId
-            )
-            $PSCmdlet.ThrowTerminatingError($errorRecord)
-        }
-        finally {
-            if ($tempTranscript -and (Test-Path -LiteralPath $tempTranscript)) {
-                Remove-Item -LiteralPath $tempTranscript -Force -ErrorAction SilentlyContinue
-            }
-        }
+        } while (-not $stepSucceeded)
     }
 }

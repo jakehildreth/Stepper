@@ -780,4 +780,370 @@ Describe 'New-Step' -Tag 'Integration' {
             $logContent | Should -Match "'Provision Infra'"
         }
     }
+
+    Context 'Retry — parameter validation' {
+        BeforeEach {
+            $script:RetryValInfo = New-TestStepperScript -BaseName "retry-val-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryValInfo.Path):$($script:RetryValInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Throws for -RetryInterval 0' {
+            { New-Step -Retry -RetryInterval 0 { } } | Should -Throw
+        }
+
+        It 'Throws for negative -RetryInterval' {
+            { New-Step -Retry -RetryInterval -5 { } } | Should -Throw
+        }
+
+        It 'Throws for -MaxRetries 0' {
+            { New-Step -Retry -MaxRetries 0 { } } | Should -Throw
+        }
+
+        It 'Throws for negative -MaxRetries' {
+            { New-Step -Retry -MaxRetries -1 { } } | Should -Throw
+        }
+    }
+
+    Context 'Retry — single-attempt behavior unchanged without -Retry' {
+        BeforeEach {
+            $script:NoRetryInfo = New-TestStepperScript -BaseName "no-retry-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:NoRetryInfo.Path):$($script:NoRetryInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Does not call Start-Sleep when -Retry is absent and step succeeds' {
+            New-Step { }
+            Should -Invoke Start-Sleep -Exactly 0 -Scope It
+        }
+
+        It 'Does not call Start-Sleep when -Retry is absent and step fails' {
+            try { New-Step { throw 'boom' } } catch { }
+            Should -Invoke Start-Sleep -Exactly 0 -Scope It
+        }
+
+        It 'Throws StepExecutionFailed immediately on failure without -Retry' {
+            $errors = @()
+            try {
+                New-Step { throw 'immediate failure' } -ErrorAction Stop
+            } catch {
+                $errors += $_
+            }
+            $errors | Where-Object { $_.FullyQualifiedErrorId -like 'StepExecutionFailed*' } | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'Retry — success on first attempt does not trigger retry' {
+        BeforeEach {
+            $script:RetrySuccessInfo = New-TestStepperScript -BaseName "retry-ok-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetrySuccessInfo.Path):$($script:RetrySuccessInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Does not call Start-Sleep when step succeeds on first attempt with -Retry' {
+            New-Step -Retry -RetryInterval 1 { }
+            Should -Invoke Start-Sleep -Exactly 0 -Scope It
+        }
+
+        It 'Creates state file on first-attempt success with -Retry' {
+            New-Step -Retry { }
+            $script:RetrySuccessInfo.StatePath | Should -Exist
+        }
+    }
+
+    Context 'Retry — step fails once then succeeds' {
+        BeforeEach {
+            $script:RetryOnceInfo = New-TestStepperScript -BaseName "retry-once-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryOnceInfo.Path):$($script:RetryOnceInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Calls Start-Sleep exactly once after one failure then success' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            Should -Invoke Start-Sleep -Exactly 1 -Scope It
+        }
+
+        It 'Creates state file after eventual success' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $script:RetryOnceInfo.StatePath | Should -Exist
+        }
+
+        It 'Does not throw when step eventually succeeds within MaxRetries' {
+            $counter = @{ Calls = 0 }
+            {
+                New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                    $counter.Calls++
+                    if ($counter.Calls -lt 2) { throw 'transient' }
+                }
+            } | Should -Not -Throw
+        }
+    }
+
+    Context 'Retry — all retries exhausted' {
+        BeforeEach {
+            $script:RetryExhaustedInfo = New-TestStepperScript -BaseName "retry-exhaust-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryExhaustedInfo.Path):$($script:RetryExhaustedInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Throws StepExecutionFailed after MaxRetries retries are exhausted' {
+            $errors = @()
+            try {
+                New-Step -Retry -RetryInterval 1 -MaxRetries 3 { throw 'always fails' } -ErrorAction Stop
+            } catch {
+                $errors += $_
+            }
+            $errors | Where-Object { $_.FullyQualifiedErrorId -like 'StepExecutionFailed*' } | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Does not create a state file when all retries are exhausted' {
+            try {
+                New-Step -Retry -RetryInterval 1 -MaxRetries 3 { throw 'always fails' }
+            } catch { }
+            $script:RetryExhaustedInfo.StatePath | Should -Not -Exist
+        }
+
+        It 'Calls Start-Sleep MaxRetries times when all attempts fail' {
+            try {
+                New-Step -Retry -RetryInterval 1 -MaxRetries 3 { throw 'always fails' }
+            } catch { }
+            Should -Invoke Start-Sleep -Exactly 3 -Scope It
+        }
+
+        It 'Executes ScriptBlock MaxRetries + 1 times total when all attempts fail' {
+            $counter = @{ Calls = 0 }
+            try {
+                New-Step -Retry -RetryInterval 1 -MaxRetries 3 {
+                    $counter.Calls++
+                    throw 'always fails'
+                }
+            } catch { }
+            $counter.Calls | Should -Be 4
+        }
+    }
+
+    Context 'Retry — exponential backoff wait times' {
+        BeforeEach {
+            $script:RetryBackoffInfo = New-TestStepperScript -BaseName "retry-backoff-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryBackoffInfo.Path):$($script:RetryBackoffInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Waits RetryInterval seconds on first retry (attempt 0: interval * 2^0)' {
+            try {
+                New-Step -Retry -RetryInterval 10 -MaxRetries 1 { throw 'fail' }
+            } catch { }
+            Should -Invoke Start-Sleep -Exactly 1 -ParameterFilter { $Seconds -eq 10 } -Scope It
+        }
+
+        It 'Waits RetryInterval * 2 seconds on second retry (attempt 1: interval * 2^1)' {
+            try {
+                New-Step -Retry -RetryInterval 10 -MaxRetries 2 { throw 'fail' }
+            } catch { }
+            Should -Invoke Start-Sleep -Exactly 1 -ParameterFilter { $Seconds -eq 20 } -Scope It
+        }
+
+        It 'Waits RetryInterval * 4 seconds on third retry (attempt 2: interval * 2^2)' {
+            try {
+                New-Step -Retry -RetryInterval 10 -MaxRetries 3 { throw 'fail' }
+            } catch { }
+            Should -Invoke Start-Sleep -Exactly 1 -ParameterFilter { $Seconds -eq 40 } -Scope It
+        }
+    }
+
+    Context 'Retry — events logged via Write-StepperLog' {
+        BeforeEach {
+            $script:RetryLogInfo = New-TestStepperScript -BaseName "retry-log-$(New-Guid)"
+            $script:RetryLogPath = Join-Path $TestDrive "retry-events-$(New-Guid).log"
+            Mock Get-StepIdentifier { "$($script:RetryLogInfo.Path):$($script:RetryLogInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Writes a retry event entry to the log after a failed attempt' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'Retrying'
+        }
+
+        It 'Log entry includes current attempt number' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'attempt 1'
+        }
+
+        It 'Log entry includes MaxRetries value' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '/3'
+        }
+
+        It 'Log entry includes the computed wait time in seconds' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '5s'
+        }
+    }
+
+    Context 'Retry — elapsed time reporting' {
+        BeforeEach {
+            $script:RetryElapsedInfo = New-TestStepperScript -BaseName "retry-elapsed-$(New-Guid)"
+            $script:RetryElapsedLogPath = Join-Path $TestDrive "retry-elapsed-$(New-Guid).log"
+            Mock Get-StepIdentifier { "$($script:RetryElapsedInfo.Path):$($script:RetryElapsedInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryElapsedLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Completion log entry reports final attempt elapsed time' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryElapsedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'completed in \d+\.?\d*s'
+        }
+
+        It 'Completion log entry includes total wall time when retries occurred' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryElapsedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'total wall time'
+        }
+
+        It 'Completion log entry does not include total wall time when step succeeds first attempt' {
+            New-Step -Retry -RetryInterval 5 { }
+            $logContent = Get-Content -Path $script:RetryElapsedLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Not -Match 'total wall time'
+        }
+    }
+
+    Context 'Retry — partial transcript per failed attempt' {
+        BeforeEach {
+            $script:RetryTranscriptInfo = New-TestStepperScript -BaseName "retry-transcript-$(New-Guid)"
+            $script:RetryTranscriptLogPath = Join-Path $TestDrive "retry-transcript-$(New-Guid).log"
+            Mock Get-StepIdentifier { "$($script:RetryTranscriptInfo.Path):$($script:RetryTranscriptInfo.FirstStepLine)" }
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryTranscriptLogPath); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Writes a PARTIAL transcript marker to the log for each failed retry attempt' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryTranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'PARTIAL'
+        }
+
+        It 'Partial transcript header includes attempt number' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryTranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match 'ATTEMPT \d+ PARTIAL'
+        }
+
+        It 'Writes a clean transcript section (no PARTIAL) for the successful attempt' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient' }
+            }
+            $logContent = Get-Content -Path $script:RetryTranscriptLogPath -Raw -ErrorAction SilentlyContinue
+            $logContent | Should -Match '=== BEGIN STEP \d+ TRANSCRIPT ==='
+        }
+    }
+
+    Context 'Retry — warning when RetryInterval or MaxRetries used without -Retry' {
+        BeforeEach {
+            $script:RetryWarnInfo = New-TestStepperScript -BaseName "retry-warn-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryWarnInfo.Path):$($script:RetryWarnInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Emits a warning when -RetryInterval is specified without -Retry' {
+            $warnings = New-Step -RetryInterval 30 { } 3>&1
+            $warnings | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Emits a warning when -MaxRetries is specified without -Retry' {
+            $warnings = New-Step -MaxRetries 3 { } 3>&1
+            $warnings | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Does not emit a retry-param warning when both -Retry and -RetryInterval are specified' {
+            $warnings = New-Step -Retry -RetryInterval 30 { } 3>&1
+            $warnings | Where-Object { $_ -match '-RetryInterval.*-Retry|-Retry.*-RetryInterval' } | Should -BeNullOrEmpty
+        }
+
+        It 'Does not emit a retry-param warning when both -Retry and -MaxRetries are specified' {
+            $warnings = New-Step -Retry -MaxRetries 3 { } 3>&1
+            $warnings | Where-Object { $_ -match '-MaxRetries.*-Retry|-Retry.*-MaxRetries' } | Should -BeNullOrEmpty
+        }
+    }
 }
