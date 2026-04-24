@@ -1,13 +1,13 @@
 function Test-StepperScriptRequirements {
     <#
     .SYNOPSIS
-        Checks if script has required declarations and offers to add them.
+        Checks if a script has a [CmdletBinding()] declaration and silently adds it if missing.
 
     .PARAMETER ScriptPath
         Path to the script to check.
 
     .OUTPUTS
-        $true if script was modified and needs to be re-run, $false otherwise.
+        $true if the script was modified and needs to be re-run, $false otherwise.
     #>
     [CmdletBinding()]
     param(
@@ -38,61 +38,18 @@ function Test-StepperScriptRequirements {
         ($parsedAst.Ast.ParamBlock.Attributes |
             Where-Object { $_.TypeName.Name -eq 'CmdletBinding' })
 
-    # Check for #requires -Modules Stepper
-    $hasRequires = $parsedAst.Ast.ScriptRequirements -and
-        ($parsedAst.Ast.ScriptRequirements.RequiredModules |
-            Where-Object { $_.Name -eq 'Stepper' })
-
-    $needsChanges = -not $hasCmdletBinding -or -not $hasRequires
+    $needsChanges = -not $hasCmdletBinding
 
     if ($needsChanges) {
-        Write-Host ""
-        Write-Host "[!] Script requirements check for ${scriptName}:" -ForegroundColor Magenta
-        Write-Host ""
-
-        if (-not $hasCmdletBinding) {
-            Write-Host "  Missing [CmdletBinding()] declaration" -ForegroundColor Gray
-        }
-
-        if (-not $hasRequires) {
-            Write-Host "  Missing #requires -Modules Stepper statement" -ForegroundColor Gray
-        }
-
-        Write-Host ""
-        Write-Host "How would you like to handle this?"
-        Write-Host ""
-        Write-Host "  [A] Add missing declarations (Default)" -ForegroundColor Cyan
-        Write-Host "  [S] Skip" -ForegroundColor White
-        Write-Host "  [Q] Quit" -ForegroundColor White
-        Write-Host ""
-        Write-Host "Choice? [" -NoNewline
-        Write-Host "A" -NoNewline -ForegroundColor Cyan
-        Write-Host "/s/q]: " -NoNewline
-        try {
-            $response = Read-Host
-        }
-        catch {
-            # Non-interactive context - default to Add (safer for automation)
-            $response = 'a'
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Add"
-        }
-
-        if ($response -eq 'Q' -or $response -eq 'q') {
-            Write-Host ""
-            Write-Host "Exiting..." -ForegroundColor Yellow
-            exit
-        }
-
-        if ($response -eq '' -or $response -eq 'A' -or $response -eq 'a') {
-            $newScriptLines = @()
-            $addedDeclarations = $false
+        $newScriptLines = @()
+        $addedDeclarations = $false
 
             # Find where to insert (after shebang/comments at top, before first code)
             $insertIndex = 0
             for ($i = 0; $i -lt $scriptLines.Count; $i++) {
                 $line = $scriptLines[$i].Trim()
-                # Skip empty lines, comments (but not #requires), and shebang
-                if ($line -eq '' -or $line -match '^#(?!requires)' -or $line -match '^#!/') {
+                # Skip empty lines, comments, and shebang
+                if ($line -eq '' -or $line -match '^#' -or $line -match '^#!/') {
                     $insertIndex = $i + 1
                 } else {
                     break
@@ -104,17 +61,12 @@ function Test-StepperScriptRequirements {
                 $newScriptLines += $scriptLines[$i]
             }
 
-            # Add missing declarations
-            if (-not $hasRequires) {
-                $newScriptLines += "#requires -Modules Stepper"
-                $addedDeclarations = $true
-            }
-
-            if (-not $hasCmdletBinding) {
-                $newScriptLines += "[CmdletBinding()]"
-                $newScriptLines += "param()"
-                $addedDeclarations = $true
-            }
+            # Add missing [CmdletBinding()]
+            $newScriptLines += "[CmdletBinding()]"
+            $newScriptLines += "param()"
+            $newScriptLines += "if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }"
+            $addedDeclarations = $true
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Added missing '[CmdletBinding()]' and Stepper install guard to $scriptName"
 
             if ($addedDeclarations) {
                 $newScriptLines += ""
@@ -159,9 +111,14 @@ function Test-StepperScriptRequirements {
             Remove-StepperState -StatePath $statePath
 
             Write-Host ""
-            Write-Host "Declarations added. Please re-run $scriptName." -ForegroundColor Green
+            Write-Host "[+] Stepper updated $scriptName with required declarations:" -ForegroundColor Cyan
+            Write-Host "      Added: [CmdletBinding()] param()" -ForegroundColor Gray
+            Write-Host "      Added: Install-Module Stepper guard (runs only if not installed)" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "[>] Please re-run your script to continue." -ForegroundColor Yellow
+            Write-Host ""
+
             return $true
-        }
     }
 
     return $false

@@ -1,3 +1,7 @@
+[CmdletBinding()]
+param()
+if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }
+
 Write-Output 'This code is useless. Delete it!' | Out-Null
 
 New-Step 'Get user''s name' {
