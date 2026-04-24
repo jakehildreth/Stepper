@@ -1199,4 +1199,22 @@ Describe 'New-Step' -Tag 'Integration' {
             Assert-MockCalled Write-Host -ParameterFilter { $ForegroundColor -eq 'Yellow' } -Exactly 1 -Scope It
         }
     }
+
+    Context '-SkipRequirementsCheck parameter' {
+        It 'Should not call Test-StepperScriptRequirements when specified' {
+            $info = New-TestStepperScript
+            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+
+            New-Step -SkipRequirementsCheck { }
+            Should -Invoke Test-StepperScriptRequirements -Exactly 0 -Scope It
+        }
+
+        It 'Should call Test-StepperScriptRequirements when not specified' {
+            $info = New-TestStepperScript
+            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+
+            New-Step { }
+            Should -Invoke Test-StepperScriptRequirements -Exactly 1 -Scope It
+        }
+    }
 }

@@ -43,6 +43,10 @@ function New-Step {
         ScriptBlock may execute up to 6 times total (1 initial + 5 retries). Defaults to 5.
         Requires -Retry. Minimum value: 1.
 
+    .PARAMETER SkipRequirementsCheck
+        Suppresses the automatic check for '#requires -Modules Stepper' and '[CmdletBinding()]'
+        declarations. Use when you intentionally manage those declarations yourself.
+
     .EXAMPLE
         New-Step 'Download Files' {
             Write-Host "Downloading files..."
@@ -90,7 +94,10 @@ function New-Step {
 
         [Parameter()]
         [ValidateRange(1, [int]::MaxValue)]
-        [int]$MaxRetries = 5
+        [int]$MaxRetries = 5,
+
+        [Parameter()]
+        [switch]$SkipRequirementsCheck
     )
 
     # Inherit verbose preference by walking the call stack
@@ -194,9 +201,11 @@ function New-Step {
         $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
         # Check script requirements (declarations) first
-        $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
-        if ($requirementsModified) {
-            exit
+        if (-not $SkipRequirementsCheck.IsPresent) {
+            $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
+            if ($requirementsModified) {
+                exit
+            }
         }
 
         # Check for unmanaged code between New-Step blocks and before Stop-Stepper
