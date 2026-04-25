@@ -20,9 +20,8 @@ Install-Module -Name Stepper -Scope CurrentUser -Force
 Create a `.ps1` script with `New-Step` blocks:
 
 ```powershell
-#Requires -Modules Stepper   # documents the dependency; Stepper enforces this
-[CmdletBinding()]            # required for error propagation and -Verbose support
-param()
+[CmdletBinding()]   # required for -Verbose support and error propagation; auto-injected if missing
+param()             # auto-injected if missing
 
 New-Step 'Download Files' {
     Write-Host "Downloading files..."
@@ -43,6 +42,8 @@ Stop-Stepper   # removes the state file on successful completion
 ```
 
 If the script fails inside a `New-Step` block, the next run resumes at the step that failed. All previously completed steps are skipped!
+
+On first run, Stepper checks for `[CmdletBinding()]` — if it's missing, it silently injects `[CmdletBinding()]`, `param()`, and a self-install guard, then exits and asks you to re-run. Nothing is required beyond what's shown above.
 
 Stepper also logs every step — execution timing, host output, and a per-step transcript — to `<scriptname>.ps1.stepper.log` by default. No configuration required.
 

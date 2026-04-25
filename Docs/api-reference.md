@@ -5,8 +5,8 @@
 Executes a step in a resumable script. Tracks state by `filepath:lineNumber`.
 
 ```powershell
-New-Step [-Name] <string> [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog]
-New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog]
+New-Step [-Name] <string> [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>] [-SkipRequirementsCheck]
+New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>] [-SkipRequirementsCheck]
 ```
 
 | Parameter | Type | Required | Description |
@@ -15,6 +15,10 @@ New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog]
 | `ScriptBlock` | `scriptblock` | Yes | The code to execute |
 | `LogPath` | `string` | No | Path to the log file. Overrides the default (`<scriptname>.ps1.stepper.log`). Only needs to be specified once — Stepper resolves it via AST scan at init time. |
 | `NoLog` | `switch` | No | Exclude this step from logging. At init time Stepper prompts to choose scope: log all / skip flagged / disable entirely. |
+| `Retry` | `switch` | No | Enable exponential backoff retry for this step. |
+| `RetryInterval` | `int` | No | Base interval in seconds between retries. Each attempt waits `RetryInterval * 2^attempt` seconds. Default: `60`. Minimum: `1`. Requires `-Retry`. |
+| `MaxRetries` | `int` | No | Max retry attempts after the initial failure (so up to `MaxRetries + 1` total executions). Default: `5`. Minimum: `1`. Requires `-Retry`. |
+| `SkipRequirementsCheck` | `switch` | No | Suppresses the automatic `[CmdletBinding()]` check and silent auto-inject. Use when you intentionally manage declarations yourself. |
 
 Must be called from a saved `.ps1` file. Does not work from the console or an unsaved editor buffer.
 
@@ -33,5 +37,5 @@ Automatically locates the calling script's state file via the call stack.
 ## Error Handling
 
 - If a step throws, Stepper propagates a terminating error with step context (identifier, name, number). State is **not** saved for the failed step — on resume, that step re-executes.
-- `[CmdletBinding()]` in the calling script is required for error propagation to work correctly.
+- `[CmdletBinding()]` in the calling script is required for error propagation to work correctly. Stepper auto-injects it if missing (see [How It Works](how-it-works.md)).
 - All file I/O errors are surfaced as typed `ErrorRecord` objects, not raw exceptions.

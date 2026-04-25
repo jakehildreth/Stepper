@@ -3,7 +3,6 @@
 ## Complete Example
 
 ```powershell
-#Requires -Modules Stepper
 [CmdletBinding()]
 param()
 
