@@ -43,7 +43,7 @@ Build-Module -ModuleName 'Stepper' {
     #New-ConfigurationModule -Type RequiredModule -Name 'PSSharedGoods' -Guid 'Auto' -Version 'Latest'
 
     # Add external module dependencies, using loop for simplicity
-    foreach ($Module in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Management')) {
+    foreach ($Module in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Host')) {
         New-ConfigurationModule -Type ExternalModule -Name $Module
     }
 
