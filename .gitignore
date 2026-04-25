@@ -21,6 +21,7 @@ Lib/Core/*
 
 # Stepper state files
 *.stepper
+*.stepper.log
 
 # Beads / Dolt files (added by bd init)
 .dolt/
