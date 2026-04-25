@@ -79,6 +79,7 @@ function Get-TrueColorBg {
     return "$ESC[48;2;${R};${G};${B}m"
 }
 
+function Show-LogoSmall {
 $width = 33
 $height = 7
 $pixels = @(
@@ -395,4 +396,5 @@ if ($Host.Name -eq 'Windows PowerShell ISE Host') {
     }
 
     Write-Host ""
+}
 }

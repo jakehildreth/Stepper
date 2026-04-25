@@ -4,7 +4,7 @@
 
 Before executing any steps, Stepper validates the script:
 
-1. Checks for `[CmdletBinding()]` and `#Requires -Modules Stepper` — prompts to add them if missing
+1. Checks for `[CmdletBinding()]` — if missing, silently injects `[CmdletBinding()]`, `param()`, and a self-install guard, then exits and asks you to re-run. No prompt, no `#Requires` statement added.
 2. Scans for unmanaged code between `New-Step` blocks — prompts per block: Wrap / Mark / Delete / Ignore
 3. Checks that `Stop-Stepper` appears at the end
 
@@ -55,7 +55,7 @@ When `Read-Host` is unavailable (CI/CD, remoting, unattended runs), Stepper fall
 
 | Prompt | Default |
 |---|---|
-| Missing declarations | Add |
+| Missing `[CmdletBinding()]` | Silent auto-inject (always; no prompt) |
 | Unmanaged code | Wrap |
 | Resume — script unchanged | Resume |
 | Resume — script modified | Start over |
