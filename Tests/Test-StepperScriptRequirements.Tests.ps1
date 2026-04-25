@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Get-StepperStatePath.ps1"
     . "$ModulePath/Private/Remove-StepperState.ps1"
+    . "$ModulePath/Private/Write-StepperLog.ps1"
     . "$ModulePath/Private/Test-StepperScriptRequirements.ps1"
 }
 
@@ -12,14 +13,18 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
         Mock Write-Host {}
         Mock Read-Host {}
         Mock Write-Verbose {}
+        Mock Write-StepperLog {}
     }
 
-    Context 'When script already has [CmdletBinding()]' {
+    Context 'When script already has [CmdletBinding()] and Install-Module guard' {
         BeforeEach {
             $script:ScriptPath = Join-Path $TestDrive "complete-$(New-Guid).ps1"
             Set-Content -Path $script:ScriptPath -Value @(
                 '[CmdletBinding()]'
                 'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
                 'New-Step { Write-Host "step" }'
                 'Stop-Stepper'
             )
@@ -35,9 +40,74 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
             Should -Invoke Read-Host -Exactly 0 -Scope It
         }
 
-        It 'Should not emit verbose about adding declarations' {
+        It 'Should not call Write-StepperLog about adding declarations' {
             Test-StepperScriptRequirements -ScriptPath $script:ScriptPath
-            Should -Invoke Write-Verbose -Exactly 0 -Scope It -ParameterFilter { $Message -match 'Added missing' }
+            Should -Invoke Write-StepperLog -Exactly 0 -Scope It
+        }
+    }
+
+    Context 'When [CmdletBinding()] exists but Install-Module guard is missing' {
+        BeforeEach {
+            $script:MissingGuardPath = Join-Path $TestDrive "missing-guard-$(New-Guid).ps1"
+            Set-Content -Path $script:MissingGuardPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                'New-Step { Write-Host "step" }'
+                'Stop-Stepper'
+            )
+        }
+
+        It 'Should return $true' {
+            $result = Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $result | Should -BeTrue
+        }
+
+        It 'Should add the Install-Module guard' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $content = Get-Content -Path $script:MissingGuardPath -Raw
+            $content | Should -Match 'Install-Module Stepper'
+        }
+
+        It 'Should wrap the guard in a Stepper ignore region' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $content = Get-Content -Path $script:MissingGuardPath -Raw
+            $content | Should -Match '#region Stepper ignore'
+        }
+
+        It 'Should not add a second [CmdletBinding()]' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $lines = Get-Content -Path $script:MissingGuardPath
+            ($lines | Where-Object { $_ -match '\[CmdletBinding\(\)\]' }).Count | Should -Be 1
+        }
+
+        It 'Should not add a second param()' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $lines = Get-Content -Path $script:MissingGuardPath
+            ($lines | Where-Object { $_ -match '^\s*param\s*\(' }).Count | Should -Be 1
+        }
+
+        It 'Should insert guard after param() block' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            $lines = Get-Content -Path $script:MissingGuardPath
+            $paramIdx = [array]::IndexOf($lines, 'param()')
+            $guardIdx = ($lines | Select-String 'Install-Module Stepper').LineNumber - 1
+            $guardIdx | Should -BeGreaterThan $paramIdx
+        }
+
+        It 'Should call Write-StepperLog reporting the addition' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            Should -Invoke Write-StepperLog -Scope It
+        }
+
+        It 'Should write to the default log file' {
+            $expectedLog = $script:MissingGuardPath + '.stepper.log'
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            Should -Invoke Write-StepperLog -Scope It -ParameterFilter { $LogPath -eq $expectedLog }
+        }
+
+        It 'Should not call Read-Host' {
+            Test-StepperScriptRequirements -ScriptPath $script:MissingGuardPath
+            Should -Invoke Read-Host -Exactly 0 -Scope It
         }
     }
 
@@ -68,14 +138,51 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
             $content | Should -Match 'Install-Module Stepper'
         }
 
-        It 'Should emit Write-Verbose reporting the addition' {
+        It 'Should call Write-StepperLog reporting the addition' {
             Test-StepperScriptRequirements -ScriptPath $script:CbMissingPath
-            Should -Invoke Write-Verbose -Scope It
+            Should -Invoke Write-StepperLog -Scope It
+        }
+
+        It 'Should write to the default log file' {
+            $expectedLog = $script:CbMissingPath + '.stepper.log'
+            Test-StepperScriptRequirements -ScriptPath $script:CbMissingPath
+            Should -Invoke Write-StepperLog -Scope It -ParameterFilter { $LogPath -eq $expectedLog }
         }
 
         It 'Should not call Read-Host' {
             Test-StepperScriptRequirements -ScriptPath $script:CbMissingPath
             Should -Invoke Read-Host -Exactly 0 -Scope It
+        }
+    }
+
+    Context 'When [CmdletBinding()] is missing but Install-Module guard already exists' {
+        BeforeEach {
+            $script:GuardOnlyPath = Join-Path $TestDrive "guard-only-$(New-Guid).ps1"
+            Set-Content -Path $script:GuardOnlyPath -Value @(
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "step" }'
+                'Stop-Stepper'
+            )
+        }
+
+        It 'Should return $true' {
+            $result = Test-StepperScriptRequirements -ScriptPath $script:GuardOnlyPath
+            $result | Should -BeTrue
+        }
+
+        It 'Should add [CmdletBinding()]' {
+            Test-StepperScriptRequirements -ScriptPath $script:GuardOnlyPath
+            $content = Get-Content -Path $script:GuardOnlyPath -Raw
+            $content | Should -Match '\[CmdletBinding\(\)\]'
+        }
+
+        It 'Should not duplicate the Install-Module guard' {
+            Test-StepperScriptRequirements -ScriptPath $script:GuardOnlyPath
+            $lines = Get-Content -Path $script:GuardOnlyPath
+            ($lines | Where-Object { $_ -match 'Install-Module Stepper' }).Count | Should -Be 1
         }
     }
 
@@ -85,6 +192,9 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
             Set-Content -Path $scriptPath -Value @(
                 '[CmdletBinding()]'
                 'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
                 'New-Step { Write-Host "step" }'
                 'Stop-Stepper'
             )
@@ -125,9 +235,15 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
             $content | Should -Not -Match '(?i)#requires'
         }
 
-        It 'Should emit Write-Verbose reporting the addition' {
+        It 'Should call Write-StepperLog reporting the addition' {
             Test-StepperScriptRequirements -ScriptPath $script:MissingBothPath
-            Should -Invoke Write-Verbose -Scope It
+            Should -Invoke Write-StepperLog -Scope It
+        }
+
+        It 'Should write to the default log file' {
+            $expectedLog = $script:MissingBothPath + '.stepper.log'
+            Test-StepperScriptRequirements -ScriptPath $script:MissingBothPath
+            Should -Invoke Write-StepperLog -Scope It -ParameterFilter { $LogPath -eq $expectedLog }
         }
 
         It 'Should not call Read-Host' {
@@ -177,6 +293,9 @@ Describe 'Test-StepperScriptRequirements' -Tag 'Unit' {
             Set-Content -Path $scriptPath -Value @(
                 '[CmdletBinding()]'
                 'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
                 'New-Step { Write-Host "step" }'
                 'Stop-Stepper'
             )

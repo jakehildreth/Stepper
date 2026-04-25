@@ -4,7 +4,7 @@
 
 Before executing any steps, Stepper validates the script:
 
-1. Checks for `[CmdletBinding()]` — if missing, silently injects `[CmdletBinding()]`, `param()`, and a self-install guard, then exits and asks you to re-run. No prompt, no `#Requires` statement added.
+1. Checks for `[CmdletBinding()]` and the self-install guard independently — each is silently injected if missing. The guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings on the next run. No prompt, no `#Requires` statement added.
 2. Scans for unmanaged code between `New-Step` blocks — prompts per block: Wrap / Mark / Delete / Ignore
 3. Checks that `Stop-Stepper` appears at the end
 
