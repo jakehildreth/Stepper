@@ -17,7 +17,13 @@ A cross-platform PowerShell utility module for creating resumable, step-by-step 
 Install-Module -Name Stepper -Scope CurrentUser -Force
 ```
 
-Create a `.ps1` script with `New-Step` blocks:
+Scaffold a new script (or create one manually):
+
+```powershell
+New-StepperScript -Name 'MyScript'
+```
+
+Or create a `.ps1` script with `New-Step` blocks by hand:
 
 ```powershell
 [CmdletBinding()]   # required for -Verbose support and error propagation; auto-injected if missing
@@ -64,7 +70,7 @@ Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://char
 - [Data Persistence](Docs/data-persistence.md) — `$Stepper` hashtable, state file schema
 - [Logging](Docs/logging.md) — log files, step transcripts, `-LogPath`, `-NoLog`
 - [Unmanaged Code](Docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
-- [API Reference](Docs/api-reference.md) — `New-Step`, `Stop-Stepper`, error handling
+- [API Reference](Docs/api-reference.md) — `New-Step`, `Stop-Stepper`, `New-StepperScript`, `Test-StepperScript`, `Repair-StepperScript`
 - [Examples](Docs/examples.md)
 - [Troubleshooting](Docs/troubleshooting.md)
 
