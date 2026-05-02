@@ -202,8 +202,11 @@ function New-Step {
 
         # Check script requirements (declarations) first
         if (-not $SkipRequirementsCheck.IsPresent) {
-            $requirementsModified = Test-StepperScriptRequirements -ScriptPath $scriptPath
-            if ($requirementsModified) {
+            $preRepairResult = Test-StepperScript -ScriptPath $scriptPath
+            $needsRestart    = $preRepairResult.Issues |
+                Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard' }
+            Repair-StepperScript -ScriptPath $scriptPath | Out-Null
+            if ($needsRestart) {
                 exit
             }
         }

@@ -1,7 +1,7 @@
 # ADR 0003: Silent auto-add for script requirements with `-SkipRequirementsCheck` escape hatch
 
 **Date:** 2026-04-24
-**Status:** Accepted
+**Status:** Superseded by ADR-0008
 **Deciders:** Jake Hildreth
 
 ---
