@@ -18,6 +18,16 @@ BeforeAll {
 Describe 'Repair-StepperScript' -Tag 'Unit' {
 
     Context 'Return value' {
+        It 'Should accept -Path as an alias for -ScriptPath' {
+            # Arrange
+            $path = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
+            try {
+                # Act / Assert — should not throw ParameterNotFound
+                { Repair-StepperScript -Path $path } | Should -Not -Throw
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
         It 'Should return a PSCustomObject with Path, IsValid, Issues' {
             # Arrange
             $path = New-TempScript @(

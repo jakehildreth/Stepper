@@ -32,6 +32,7 @@ function Repair-StepperScript {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
+        [Alias('Path')]
         [string]$ScriptPath
     )
 

@@ -71,6 +71,16 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
 
+        It 'Should accept -Path as an alias for -ScriptPath' {
+            # Arrange
+            $path = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
+            try {
+                # Act / Assert — should not throw ParameterNotFound
+                { Test-StepperScript -Path $path } | Should -Not -Throw
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
         It 'Should never modify the script file' {
             # Arrange
             $path = New-TempScript @(
