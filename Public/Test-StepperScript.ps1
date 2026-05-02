@@ -31,6 +31,7 @@ function Test-StepperScript {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
+        [Alias('Path')]
         [string]$ScriptPath
     )
 
