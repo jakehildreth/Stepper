@@ -28,7 +28,7 @@ function Repair-StepperScript {
         PSCustomObject — the result of Test-StepperScript after repairs are applied.
                          Shape: { Path, IsValid, Issues[] }
     #>
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]

@@ -23,13 +23,27 @@ function Show-MoreDetails {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [pscustomobject]$ExistingState,
-        [Parameter(Mandatory)] [string]$ScriptPath,
-        [Parameter(Mandatory)] [string]$CurrentHash,
-        [Parameter(Mandatory)] [string]$LastStep,
-        [Parameter(Mandatory)] [int]$NextStepLine,
-        [Parameter()] [string]$NextStepName,
-        [Parameter()] [int]$NextStepNumber,
+        [Parameter(Mandatory)]
+        [pscustomobject]$ExistingState,
+
+        [Parameter(Mandatory)]
+        [string]$ScriptPath,
+
+        [Parameter(Mandatory)]
+        [string]$CurrentHash,
+
+        [Parameter(Mandatory)]
+        [string]$LastStep,
+
+        [Parameter(Mandatory)]
+        [int]$NextStepLine,
+
+        [Parameter()]
+        [string]$NextStepName,
+
+        [Parameter()]
+        [int]$NextStepNumber,
+
         [switch]$ShowHashComparison
     )
 

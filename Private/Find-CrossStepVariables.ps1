@@ -64,8 +64,9 @@ function Find-CrossStepVariables {
 
     # Collect all New-Step CommandAst nodes in document order
     $newStepCalls = @($ast.FindAll({
-        $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'New-Step'
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -eq 'New-Step'
     }, $true) | Sort-Object { $_.Extent.StartLineNumber })
 
     if ($newStepCalls.Count -lt 2) {
@@ -101,7 +102,8 @@ function Find-CrossStepVariables {
 
         # Assignments: left-hand side of AssignmentStatementAst
         $assignments = $body.FindAll({
-            $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst]
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst]
         }, $true)
 
         foreach ($assign in $assignments) {
@@ -114,7 +116,8 @@ function Find-CrossStepVariables {
 
         # All variable references (reads)
         $varRefs = $body.FindAll({
-            $args[0] -is [System.Management.Automation.Language.VariableExpressionAst]
+            param($node)
+            $node -is [System.Management.Automation.Language.VariableExpressionAst]
         }, $true)
 
         foreach ($ref in $varRefs) {

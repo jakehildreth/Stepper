@@ -41,7 +41,7 @@ function New-StepperScript {
     .EXAMPLE
         New-StepperScript -Name 'Deploy' -Directory './scripts' -Showcase
     #>
-    [CmdletBinding(DefaultParameterSetName = 'ByPath', SupportsShouldProcess)]
+    [CmdletBinding(DefaultParameterSetName = 'ByPath', SupportsShouldProcess, ConfirmImpact = 'Low')]
     [OutputType([System.IO.FileInfo])]
     param(
         [Parameter(Mandatory, ParameterSetName = 'ByPath', Position = 0)]

@@ -191,14 +191,14 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
 
         It 'Writes a non-terminating error' {
-            Mock Write-Error {}
-            Stop-Stepper
-            Should -Invoke Write-Error -Exactly 1 -Scope It
+            $result = Stop-Stepper 2>&1
+            $errRecords = @($result | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+            $errRecords.Count | Should -Be 1
+            $errRecords[0].Exception.Message | Should -Match 'Failed to clear Stepper state'
         }
 
         It 'Does not rethrow' {
-            Mock Write-Error {}
-            { Stop-Stepper } | Should -Not -Throw
+            { Stop-Stepper 2>&1 | Out-Null } | Should -Not -Throw
         }
     }
 
