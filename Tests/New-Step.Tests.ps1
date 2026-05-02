@@ -13,10 +13,13 @@ BeforeAll {
     . "$ModulePath/Private/Find-UnmanagedCodeBlocks.ps1"
     . "$ModulePath/Private/Get-UnmanagedCodeAction.ps1"
     . "$ModulePath/Private/Update-ScriptWithUnmanagedActions.ps1"
-    . "$ModulePath/Private/Test-StepperScriptRequirements.ps1"
+    . "$ModulePath/Private/Add-StepperCbh.ps1"
+    . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Show-MoreDetails.ps1"
     . "$ModulePath/Private/Write-StepperLog.ps1"
     . "$ModulePath/Private/Get-StepLogConfig.ps1"
+    . "$ModulePath/Public/Test-StepperScript.ps1"
+    . "$ModulePath/Public/Repair-StepperScript.ps1"
     . "$ModulePath/Public/New-Step.ps1"
 
     # Helper: create a minimal valid stepper script in $TestDrive.
@@ -53,7 +56,8 @@ Describe 'New-Step' -Tag 'Integration' {
     BeforeAll {
         Mock Write-Host {}
         Mock Write-Verbose {}
-        Mock Test-StepperScriptRequirements { $false }
+        Mock Test-StepperScript { [PSCustomObject]@{ IsValid = $true; Issues = @() } }
+        Mock Repair-StepperScript { [PSCustomObject]@{ IsValid = $true; Issues = @() } }
         Mock Find-NewStepBlocks { [PSCustomObject]@{ NewStepBlocks = @(); StopStepperLine = -1 } }
         Mock Find-UnmanagedCodeBlocks { @() }
         Mock Show-MoreDetails {}
@@ -1201,20 +1205,20 @@ Describe 'New-Step' -Tag 'Integration' {
     }
 
     Context '-SkipRequirementsCheck parameter' {
-        It 'Should not call Test-StepperScriptRequirements when specified' {
+        It 'Should not call Repair-StepperScript when specified' {
             $info = New-TestStepperScript
             Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
 
             New-Step -SkipRequirementsCheck { }
-            Should -Invoke Test-StepperScriptRequirements -Exactly 0 -Scope It
+            Should -Invoke Repair-StepperScript -Exactly 0 -Scope It
         }
 
-        It 'Should call Test-StepperScriptRequirements when not specified' {
+        It 'Should call Repair-StepperScript when not specified' {
             $info = New-TestStepperScript
             Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
 
             New-Step { }
-            Should -Invoke Test-StepperScriptRequirements -Exactly 1 -Scope It
+            Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
         }
     }
 }
