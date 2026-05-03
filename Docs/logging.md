@@ -49,7 +49,7 @@ One or more steps have -NoLog. How should logging be scoped?
 |---|---|
 | `[A]` | Log all steps, ignore `-NoLog` flags |
 | `[S]` | Skip transcript/log for flagged steps only |
-| `[N]` | Disable logging entirely for this run |
+| `[D]` | Disable logging entirely for this run |
 | `[Q]` | Exit without running |
 
 In non-interactive mode (CI/CD, remoting), the default is `[A]`.

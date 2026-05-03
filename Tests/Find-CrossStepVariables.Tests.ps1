@@ -211,4 +211,101 @@ Describe 'Find-CrossStepVariables' -Tag 'Unit' {
             $result | Should -Contain 'items'
         }
     }
+
+    Context 'When a variable is assigned in unmanaged (script-level) code and read in a step' {
+        It 'Should return the variable name' {
+            $content = @(
+                '$servers = Get-Content servers.txt'
+                'New-Step {'
+                '    foreach ($s in $servers) { Write-Host $s }'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Contain 'servers'
+        }
+
+        It 'Should return the variable name even when there is only one New-Step block' {
+            $content = @(
+                '$config = Import-PowerShellDataFile config.psd1'
+                'New-Step {'
+                '    Apply-Config $config'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Contain 'config'
+        }
+
+        It 'Should NOT return a variable assigned in unmanaged code that is never read in any step' {
+            $content = @(
+                '$unused = "hello"'
+                'New-Step {'
+                '    Write-Host "step 1"'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Not -Contain 'unused'
+        }
+
+        It 'Should NOT return automatic variables assigned in unmanaged code' {
+            $content = @(
+                '$ErrorActionPreference = "Stop"'
+                'New-Step {'
+                '    Write-Host $ErrorActionPreference'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Not -Contain 'ErrorActionPreference'
+        }
+    }
+
+    Context 'When a variable is written and read inside a -Retry step' {
+        It 'Should return the variable name (it must survive across retries)' {
+            $content = @(
+                'New-Step -Retry -MaxRetries 3 {'
+                '    if ($null -eq $attempt) { $attempt = 0 }'
+                '    $attempt++'
+                '    if ($attempt -lt 3) { throw "retry" }'
+                '    Write-Host "done on $attempt"'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Contain 'attempt'
+        }
+
+        It 'Should NOT return a variable that is only written (never read) inside a -Retry step' {
+            $content = @(
+                'New-Step -Retry -MaxRetries 3 {'
+                '    $writeOnly = Get-Date'
+                '    throw "retry"'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Not -Contain 'writeOnly'
+        }
+
+        It 'Should NOT return automatic variables inside a -Retry step' {
+            $content = @(
+                'New-Step -Retry -MaxRetries 3 {'
+                '    if ($null -eq $ErrorActionPreference) { $ErrorActionPreference = "Stop" }'
+                '    throw "retry"'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+
+            $result = Find-CrossStepVariables -ScriptContent $content
+            $result | Should -Not -Contain 'ErrorActionPreference'
+        }
+    }
 }

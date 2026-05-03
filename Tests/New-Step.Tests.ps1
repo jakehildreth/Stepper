@@ -14,12 +14,16 @@ BeforeAll {
     . "$ModulePath/Private/Get-UnmanagedCodeAction.ps1"
     . "$ModulePath/Private/Update-ScriptWithUnmanagedActions.ps1"
     . "$ModulePath/Private/Add-StepperCbh.ps1"
+    . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Show-MoreDetails.ps1"
     . "$ModulePath/Private/Write-StepperLog.ps1"
     . "$ModulePath/Private/Get-StepLogConfig.ps1"
+    . "$ModulePath/Private/Find-CrossStepVariables.ps1"
+    . "$ModulePath/Private/Test-StepperConversionComplete.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
     . "$ModulePath/Public/Repair-StepperScript.ps1"
+    . "$ModulePath/Public/ConvertTo-StepperScript.ps1"
     . "$ModulePath/Public/New-Step.ps1"
 
     # Helper: create a minimal valid stepper script in $TestDrive.
@@ -61,6 +65,10 @@ Describe 'New-Step' -Tag 'Integration' {
         Mock Find-NewStepBlocks { [PSCustomObject]@{ NewStepBlocks = @(); StopStepperLine = -1 } }
         Mock Find-UnmanagedCodeBlocks { @() }
         Mock Show-MoreDetails {}
+        # Default: sentinel already present → skip conversion hook so existing tests are unaffected
+        Mock Test-StepperConversionComplete { $true }
+        Mock Find-CrossStepVariables { @() }
+        Mock ConvertTo-StepperScript {}
     }
 
     Context 'Parameter validation' {
@@ -1219,6 +1227,50 @@ Describe 'New-Step' -Tag 'Integration' {
 
             New-Step { }
             Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
+        }
+    }
+
+    Context 'ConvertTo-StepperScript first-run hook' {
+        BeforeEach {
+            $script:Info = New-TestStepperScript
+            Mock Get-StepIdentifier { "$($script:Info.Path):$($script:Info.FirstStepLine)" }
+        }
+
+        It 'Should not call ConvertTo-StepperScript when sentinel is already present' {
+            Mock Test-StepperConversionComplete { $true }
+
+            New-Step { }
+
+            Should -Invoke ConvertTo-StepperScript -Times 0 -Exactly -Scope It
+        }
+
+        It 'Should not call ConvertTo-StepperScript when no cross-step variable candidates exist' {
+            Mock Test-StepperConversionComplete { $false }
+            Mock Find-CrossStepVariables { @() }
+
+            New-Step { }
+
+            Should -Invoke ConvertTo-StepperScript -Times 0 -Exactly -Scope It
+        }
+
+        It 'Should call ConvertTo-StepperScript with correct -Path when sentinel is absent and candidates exist' {
+            Mock Test-StepperConversionComplete { $false }
+            Mock Find-CrossStepVariables { @('servers', 'count') }
+            # ConvertTo-StepperScript is already mocked (no-op); sentinel stays absent so no exit
+
+            New-Step { }
+
+            Should -Invoke ConvertTo-StepperScript -Times 1 -Exactly -Scope It -ParameterFilter {
+                $Path -eq $script:Info.Path
+            }
+        }
+
+        It 'Should not call Find-CrossStepVariables when sentinel is already present' {
+            Mock Test-StepperConversionComplete { $true }
+
+            New-Step { }
+
+            Should -Invoke Find-CrossStepVariables -Times 0 -Exactly -Scope It
         }
     }
 }

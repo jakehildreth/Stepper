@@ -157,6 +157,7 @@ function Update-ScriptWithUnmanagedActions {
 
     # Write back to file
     try {
+        New-StepperBackup -Path $ScriptPath | Out-Null
         $newScriptLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
     }
     catch {

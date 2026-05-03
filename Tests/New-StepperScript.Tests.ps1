@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Add-StepperCbh.ps1"
+    . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Get-MinimalTemplate.ps1"
     . "$ModulePath/Private/Get-ShowcaseTemplate.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"

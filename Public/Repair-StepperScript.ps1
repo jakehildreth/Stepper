@@ -118,6 +118,7 @@ function Repair-StepperScript {
                 }
             }
 
+            New-StepperBackup -Path $ScriptPath | Out-Null
             $newLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
         }
 

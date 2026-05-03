@@ -2,6 +2,7 @@ BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
     . "$ModulePath/Private/Get-ScriptHash.ps1"
     . "$ModulePath/Private/Get-ScriptAst.ps1"
+    . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Add-StepperCbh.ps1"
 
     function New-TempScript {

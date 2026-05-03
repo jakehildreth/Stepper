@@ -2,6 +2,7 @@ BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
     . "$ModulePath/Private/Get-StepperStatePath.ps1"
     . "$ModulePath/Private/Remove-StepperState.ps1"
+    . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Update-ScriptWithUnmanagedActions.ps1"
 }
 

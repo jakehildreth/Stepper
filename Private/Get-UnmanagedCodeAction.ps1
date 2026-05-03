@@ -46,14 +46,14 @@ function Get-UnmanagedCodeAction {
     Write-Host "How would you like to handle this?"
     Write-Host ""
     Write-Host "  [W] Wrap in New-Step block (Default)" -ForegroundColor Cyan
-    Write-Host "  [M] Mark as expected to ignore this code on future script runs" -ForegroundColor White
-    Write-Host "  [D] Delete this code" -ForegroundColor White
+    Write-Host "  [m] Mark as expected to ignore this code on future script runs" -ForegroundColor White
+    Write-Host "  [d] Delete this code" -ForegroundColor White
     if ($hasStepperVar) {
         Write-Host "      WARNING: Because this code references `$Stepper variables," -ForegroundColor Yellow
         Write-Host "               deleting it may impact functionality." -ForegroundColor Yellow
     }
-    Write-Host "  [I] Ignore and continue" -ForegroundColor White
-    Write-Host "  [Q] Quit" -ForegroundColor White
+    Write-Host "  [i] Ignore and continue" -ForegroundColor White
+    Write-Host "  [q] Quit" -ForegroundColor White
     Write-Host ""
 
     Write-Host "Choice? [" -NoNewline

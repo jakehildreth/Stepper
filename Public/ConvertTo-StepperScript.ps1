@@ -80,7 +80,7 @@ function ConvertTo-StepperScript {
     $candidates = @(Find-CrossStepVariables -ScriptPath $resolvedPath)
 
     if ($candidates.Count -eq 0) {
-        Write-Information "No cross-step variable candidates found in '$resolvedPath'." -InformationAction Continue
+        Write-Host "No cross-step variable candidates found in '$resolvedPath'." -ForegroundColor Gray
         return
     }
 
@@ -89,22 +89,50 @@ function ConvertTo-StepperScript {
     if ($Force) {
         foreach ($c in $candidates) { [void]$selected.Add($c) }
     } else {
+        $scriptName = Split-Path $resolvedPath -Leaf
+        Write-Host ""
+        Write-Host "[i] Cross-step variables detected in $scriptName." -ForegroundColor Cyan
+        Write-Host "    These variables cross step boundaries, i.e. they are assigned in a"
+        Write-Host "    preceding step or unmanaged code then later read inside a step."
+        Write-Host "    Converting them to `$Stepper.<Var> notation ensures they persist across steps."
+        Write-Host ""
+
         foreach ($var in $candidates) {
-            $answer = Read-Host "Convert `$$var to `$Stepper.$([char]::ToUpper($var[0]) + $var.Substring(1))? [y/N/all/quit]"
+            $capitalized = [char]::ToUpper($var[0]) + $var.Substring(1)
+            Write-Host "Convert " -NoNewline
+            Write-Host "`$$var" -NoNewline -ForegroundColor Yellow
+            Write-Host " to " -NoNewline
+            Write-Host "`$Stepper.$capitalized" -NoNewline -ForegroundColor Green
+            Write-Host "?"
+            Write-Host ""
+            Write-Host "  [Y] Yes (Default)" -ForegroundColor Cyan
+            Write-Host "  [n] No — skip this variable" -ForegroundColor White
+            Write-Host "  [a] All — convert all remaining candidates" -ForegroundColor White
+            Write-Host "  [q] Quit — stop conversion" -ForegroundColor White
+            Write-Host ""
+            Write-Host "Choice? [" -NoNewline
+            Write-Host "Y" -NoNewline -ForegroundColor Cyan
+            Write-Host "/n/a/q]: " -NoNewline
+            try {
+                $answer = Read-Host
+            } catch {
+                $answer = 'y'
+            }
+            Write-Host ""
             switch -Regex ($answer.Trim().ToLower()) {
-                '^y(es)?$' { [void]$selected.Add($var) }
-                '^a(ll)?$' {
+                '^n(o)?$'   { <# skip #> }
+                '^a(ll)?$'  {
                     foreach ($c in $candidates) { [void]$selected.Add($c) }
                     break
                 }
                 '^q(uit)?$' { return }
-                default { <# skip #> }
+                default     { [void]$selected.Add($var) }  # y, empty, or anything else = yes
             }
         }
     }
 
     if ($selected.Count -eq 0) {
-        Write-Information 'No variables selected for conversion.' -InformationAction Continue
+        Write-Host 'No variables selected for conversion.' -ForegroundColor Gray
         return
     }
 
@@ -155,8 +183,33 @@ function ConvertTo-StepperScript {
         }
     }
 
+    # Also collect occurrences in unmanaged (script-level) code — outside all step bodies.
+    # Variables assigned there and read in steps are candidates too, and their script-level
+    # uses must be rewritten so they stay in sync with $Stepper.<Var>.
+    $stepBodyRanges = $stepBodies | ForEach-Object {
+        [PSCustomObject]@{ Start = $_.Extent.StartOffset; End = $_.Extent.EndOffset }
+    }
+    $allVarRefs = @($ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.VariableExpressionAst]
+    }, $true))
+    foreach ($v in $allVarRefs) {
+        if (-not $selectedSet.Contains($v.VariablePath.UserPath)) { continue }
+        $offset = $v.Extent.StartOffset
+        $insideStep = $false
+        foreach ($range in $stepBodyRanges) {
+            if ($offset -ge $range.Start -and $offset -lt $range.End) {
+                $insideStep = $true
+                break
+            }
+        }
+        if (-not $insideStep) {
+            [void]$occurrences.Add($v)
+        }
+    }
+
     if ($occurrences.Count -eq 0) {
-        Write-Information 'No occurrences to rewrite.' -InformationAction Continue
+        Write-Host 'No occurrences to rewrite.' -ForegroundColor Gray
         return
     }
 
@@ -183,14 +236,46 @@ function ConvertTo-StepperScript {
         $content = $prefix + $replacement + $suffix
     }
 
+    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
+    $nl = [System.Environment]::NewLine
+    $endRegionPattern = '#endregion Stepper ignore'
+    $endRegionIndex = $content.IndexOf($endRegionPattern)
+
+    if ($endRegionIndex -ge 0) {
+        # Insert the sentinel on the line immediately before #endregion Stepper ignore
+        $content = $content.Substring(0, $endRegionIndex) +
+            '$StepperConversionComplete = $true' + $nl +
+            $content.Substring($endRegionIndex)
+    } else {
+        # No existing ignore region — create a new one before the first New-Step call
+        $sentinelAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $content, [ref]$null, [ref]$null
+        )
+        $firstNewStep = @($sentinelAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -eq 'New-Step'
+        }, $true) | Sort-Object { $_.Extent.StartLineNumber }) | Select-Object -First 1
+
+        if ($firstNewStep) {
+            $insertOffset = $firstNewStep.Extent.StartOffset
+            $sentinel = '#region Stepper ignore' + $nl +
+                        '$StepperConversionComplete = $true' + $nl +
+                        '#endregion Stepper ignore' + $nl
+            $content = $content.Substring(0, $insertOffset) +
+                $sentinel +
+                $content.Substring($insertOffset)
+        }
+    }
+
     if ($OutputPath) {
         # Write to output path only; source untouched, no .bak
         [System.IO.File]::WriteAllText($OutputPath, $content, [System.Text.Encoding]::UTF8)
     } else {
-        # In-place: write .bak then overwrite source
-        [System.IO.File]::WriteAllText("$resolvedPath.bak", $originalContent, [System.Text.Encoding]::UTF8)
+        # In-place: backup then overwrite source
+        New-StepperBackup -Path $resolvedPath | Out-Null
         [System.IO.File]::WriteAllText($resolvedPath, $content, [System.Text.Encoding]::UTF8)
     }
 
-    Write-Information "Converted $($occurrences.Count) occurrence(s) in '$target'." -InformationAction Continue
+    Write-Host "Converted $($occurrences.Count) occurrence(s) in '$target'." -ForegroundColor Green
 }
