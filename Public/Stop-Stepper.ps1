@@ -98,6 +98,13 @@ function Stop-Stepper {
         }
     }
     catch {
-        Write-Error "Failed to clear Stepper state: $_"
+        $PSCmdlet.WriteError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.Exception]::new("Failed to clear Stepper state: $($_.Exception.Message)", $_.Exception),
+                'StepperStateRemovalFailed',
+                [System.Management.Automation.ErrorCategory]::WriteError,
+                $null
+            )
+        )
     }
 }

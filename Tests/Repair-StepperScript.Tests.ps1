@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Add-StepperCbh.ps1"
+    . "$ModulePath/Private/New-StepperIssue.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
     . "$ModulePath/Public/Repair-StepperScript.ps1"
 

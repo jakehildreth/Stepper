@@ -3,6 +3,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptHash.ps1"
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
+    . "$ModulePath/Private/New-StepperIssue.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
 
     function New-TempScript {

@@ -37,15 +37,6 @@ function Test-StepperScript {
 
     $issues = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-    function New-Issue {
-        param([string]$Code, [string]$Severity, [string]$Message)
-        [PSCustomObject]@{
-            Code     = $Code
-            Severity = $Severity
-            Message  = $Message
-        }
-    }
-
     # Read script content
     $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop
     $scriptRaw   = $scriptLines -join [System.Environment]::NewLine
@@ -59,7 +50,7 @@ function Test-StepperScript {
             Where-Object { $_.TypeName.Name -eq 'CmdletBinding' })
 
     if (-not $hasCmdletBinding) {
-        $issues.Add((New-Issue -Code 'MissingCmdletBinding' -Severity 'Error' `
+        $issues.Add((New-StepperIssue -Code 'MissingCmdletBinding' -Severity 'Error' `
             -Message "[CmdletBinding()] is missing. Add it above param() so Stepper can use -WhatIf and common parameters."))
     }
 
@@ -67,7 +58,7 @@ function Test-StepperScript {
     $hasInstallGuard = $scriptLines | Where-Object { $_ -match 'Install-Module\s+Stepper' }
 
     if (-not $hasInstallGuard) {
-        $issues.Add((New-Issue -Code 'MissingInstallGuard' -Severity 'Error' `
+        $issues.Add((New-StepperIssue -Code 'MissingInstallGuard' -Severity 'Error' `
             -Message "Install-Module Stepper guard is missing. Add it so the script self-installs Stepper when needed."))
     }
 
@@ -75,7 +66,7 @@ function Test-StepperScript {
     $hasCbh = $scriptRaw -match '(?s)<#.*?\.SYNOPSIS.*?#>'
 
     if (-not $hasCbh) {
-        $issues.Add((New-Issue -Code 'MissingCbh' -Severity 'Warning' `
+        $issues.Add((New-StepperIssue -Code 'MissingCbh' -Severity 'Warning' `
             -Message "No comment-based help found. Add a <# .SYNOPSIS ... #> block for Get-Help support."))
     }
 
@@ -83,12 +74,12 @@ function Test-StepperScript {
     $blocks = Find-NewStepBlocks -ScriptPath $ScriptPath
 
     if ($blocks.NewStepBlocks.Count -eq 0) {
-        $issues.Add((New-Issue -Code 'NoSteps' -Severity 'Warning' `
+        $issues.Add((New-StepperIssue -Code 'NoSteps' -Severity 'Warning' `
             -Message "No New-Step blocks found. Stepper scripts should contain at least one New-Step { ... } call."))
     }
 
     if ($blocks.StopStepperLine -eq -1) {
-        $issues.Add((New-Issue -Code 'MissingStopStepper' -Severity 'Warning' `
+        $issues.Add((New-StepperIssue -Code 'MissingStopStepper' -Severity 'Warning' `
             -Message "Stop-Stepper is missing. Call Stop-Stepper at the end of the script to mark completion."))
     }
 
