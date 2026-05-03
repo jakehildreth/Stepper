@@ -4,7 +4,17 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Find-CrossStepVariables.ps1"
+    . "$ModulePath/Private/New-StepperBackup.ps1"
+    . "$ModulePath/Private/Test-StepperConversionComplete.ps1"
     . "$ModulePath/Public/ConvertTo-StepperScript.ps1"
+
+    # Remove all timestamped .ps1.bak files produced by New-StepperBackup for a given source path
+    function Remove-TempBaks {
+        param([string]$Path)
+        $dir  = Split-Path -Parent $Path
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+        Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak" | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
 
     function New-TempScript {
         param([string[]]$Lines)
@@ -97,11 +107,13 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
 
-        It 'Should not create a .bak file' {
+        It 'Should not create a backup when no candidates exist' {
             $path = New-TempScript ($NoCanidatesScript -split [System.Environment]::NewLine)
+            $dir  = Split-Path -Parent $path
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
             try {
                 ConvertTo-StepperScript -Path $path -Force
-                Test-Path "$path.bak" | Should -Be $false
+                @(Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak") | Should -HaveCount 0
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
@@ -137,7 +149,7 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
         }
 
-        It 'Should NOT rewrite variables outside New-Step bodies' {
+        It 'Should rewrite all occurrences of a candidate, including in unmanaged (script-level) code' {
             $scriptWithOuterVar = @(
                 '[CmdletBinding()]'
                 'param()'
@@ -154,11 +166,10 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             $path = New-TempScript ($scriptWithOuterVar -split [System.Environment]::NewLine)
             try {
                 ConvertTo-StepperScript -Path $path -Force
-                $lines = Get-Content -Path $path
-                # outer assignment before first New-Step must remain plain $servers
-                $lines[2] | Should -Match '^\$servers\s*='
-                # last Write-Host must remain plain $servers
-                $lines[-2] | Should -Match 'Write-Host \$servers'
+                $result = Get-Content -Path $path -Raw
+                # $servers is a cross-step candidate — all uses must be rewritten
+                $result | Should -Not -Match '(?<!\.)(\$servers)\b'
+                $result | Should -Match '\$Stepper\.Servers'
             }
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue
@@ -166,17 +177,20 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
         }
 
-        It 'Should create a .bak backup of the original' {
+        It 'Should create a timestamped .bak backup of the original' {
             $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
             $originalContent = Get-Content -Path $path -Raw
+            $dir  = Split-Path -Parent $path
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
             try {
                 ConvertTo-StepperScript -Path $path -Force
-                Test-Path "$path.bak" | Should -Be $true
-                Get-Content -Path "$path.bak" -Raw | Should -Be $originalContent
+                $bakFiles = @(Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak")
+                $bakFiles | Should -HaveCount 1
+                Get-Content -LiteralPath $bakFiles[0].FullName -Raw | Should -Be $originalContent
             }
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue
-                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+                Remove-TempBaks $path
             }
         }
 
@@ -212,12 +226,14 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
         }
 
-        It 'Should not create a .bak when -OutputPath is provided' {
-            $src = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
-            $out = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
+        It 'Should not create a backup when -OutputPath is provided' {
+            $src  = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            $out  = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
+            $dir  = Split-Path -Parent $src
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($src)
             try {
                 ConvertTo-StepperScript -Path $src -OutputPath $out -Force
-                Test-Path "$src.bak" | Should -Be $false
+                @(Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak") | Should -HaveCount 0
             }
             finally {
                 Remove-Item $src -ErrorAction SilentlyContinue
@@ -230,10 +246,12 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
         It 'Should not modify any file when -WhatIf is passed' {
             $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
             $originalContent = Get-Content -Path $path -Raw
+            $dir  = Split-Path -Parent $path
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
             try {
                 ConvertTo-StepperScript -Path $path -Force -WhatIf
                 Get-Content -Path $path -Raw | Should -Be $originalContent
-                Test-Path "$path.bak" | Should -Be $false
+                @(Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak") | Should -HaveCount 0
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
@@ -262,6 +280,84 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
                 Remove-Item $path -ErrorAction SilentlyContinue
                 Remove-Item "$path.bak" -ErrorAction SilentlyContinue
             }
+        }
+    }
+
+    Context 'Sentinel injection ($StepperConversionComplete)' {
+        It 'Should inject $StepperConversionComplete = $true before the first New-Step when no ignore region exists' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Match '\$StepperConversionComplete\s*=\s*\$true'
+                # sentinel must appear BEFORE the first New-Step
+                $sentinelIndex = $result.IndexOf('$StepperConversionComplete')
+                $newStepIndex  = $result.IndexOf('New-Step')
+                $sentinelIndex | Should -BeLessThan $newStepIndex
+                # should be wrapped in a region
+                $result | Should -Match '#region Stepper ignore'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should inject $StepperConversionComplete = $true inside existing #region Stepper ignore block' {
+            $scriptWithRegion = @(
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step {'
+                '    $servers = Get-Content servers.txt'
+                '}'
+                'New-Step {'
+                '    foreach ($s in $servers) { Write-Host $s }'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+            $path = New-TempScript ($scriptWithRegion -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Match '\$StepperConversionComplete\s*=\s*\$true'
+                # sentinel must be inside the region (before #endregion)
+                $sentinelIndex  = $result.IndexOf('$StepperConversionComplete')
+                $endRegionIndex = $result.IndexOf('#endregion Stepper ignore')
+                $sentinelIndex | Should -BeLessThan $endRegionIndex
+                # only one region block should exist
+                ([regex]::Matches($result, '#region Stepper ignore')).Count | Should -Be 1
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should NOT inject sentinel when no cross-step variable candidates exist' {
+            $path = New-TempScript ($NoCanidatesScript -split [System.Environment]::NewLine)
+            $originalContent = Get-Content -Path $path -Raw
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Be $originalContent
+                $result | Should -Not -Match '\$StepperConversionComplete'
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Should NOT inject sentinel when -WhatIf is passed' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            $originalContent = Get-Content -Path $path -Raw
+            try {
+                ConvertTo-StepperScript -Path $path -Force -WhatIf
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Be $originalContent
+                $result | Should -Not -Match '\$StepperConversionComplete'
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
     }
 }

@@ -205,8 +205,18 @@ function New-Step {
             $preRepairResult = Test-StepperScript -ScriptPath $scriptPath
             $needsRestart    = $preRepairResult.Issues |
                 Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard' }
-            Repair-StepperScript -ScriptPath $scriptPath | Out-Null
+            Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue | Out-Null
             if ($needsRestart) {
+                $scriptName = Split-Path $scriptPath -Leaf
+                $added = ($needsRestart | ForEach-Object {
+                    switch ($_.Code) {
+                        'MissingCmdletBinding' { '[CmdletBinding()]' }
+                        'MissingInstallGuard'  { 'Install-Module guard' }
+                    }
+                }) -join ' and '
+                Write-Host ""
+                Write-Host "$added has been added to $scriptName." -ForegroundColor Green
+                Write-Host "Please re-run $scriptName." -ForegroundColor Green
                 exit
             }
         }
@@ -286,8 +296,8 @@ function New-Step {
             Write-Host "How would you like to proceed?"
             Write-Host ""
             Write-Host "  [A] Add 'Stop-Stepper' to the end of the script (Default)" -ForegroundColor Cyan
-            Write-Host "  [C] Continue without Stop-Stepper" -ForegroundColor White
-            Write-Host "  [Q] Quit" -ForegroundColor White
+            Write-Host "  [c] Continue without Stop-Stepper" -ForegroundColor White
+            Write-Host "  [q] Quit" -ForegroundColor White
             Write-Host ""
             Write-Host "Choice? [" -NoNewline
             Write-Host "A" -NoNewline -ForegroundColor Cyan
@@ -310,6 +320,7 @@ function New-Step {
                 $updatedContent += "`nStop-Stepper`n"
 
                 try {
+                    New-StepperBackup -Path $scriptPath | Out-Null
                     Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
                 }
                 catch {
@@ -350,6 +361,7 @@ function New-Step {
                 $updatedContent += "`nStop-Stepper`n"
 
                 try {
+                    New-StepperBackup -Path $scriptPath | Out-Null
                     Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
                 }
                 catch {
@@ -371,6 +383,22 @@ function New-Step {
 
                 # Exit this execution - the script will need to be run again
                 exit
+            }
+        }
+
+        # Offer ConvertTo-StepperScript once on first run if script has not been converted
+        if (-not (Test-StepperConversionComplete -ScriptPath $scriptPath)) {
+            $conversionCandidates = @(Find-CrossStepVariables -ScriptPath $scriptPath)
+            if ($conversionCandidates.Count -gt 0) {
+                ConvertTo-StepperScript -Path $scriptPath
+                if (Test-StepperConversionComplete -ScriptPath $scriptPath) {
+                    # Script was rewritten — tell user what happened and exit
+                    $scriptName = Split-Path $scriptPath -Leaf
+                    Write-Host ""
+                    Write-Host "Cross-step variables have been converted to `$Stepper.<Var> notation and `$StepperConversionComplete = `$true has been added to $scriptName." -ForegroundColor Green
+                    Write-Host "Please re-run $scriptName." -ForegroundColor Green
+                    exit
+                }
             }
         }
 
@@ -446,13 +474,13 @@ function New-Step {
                 Write-Host "[i] Some steps have -NoLog specified: $noLogList" -ForegroundColor Cyan
                 Write-Host ""
                 Write-Host "  [A] Log all steps — ignore -NoLog flags (Default)" -ForegroundColor Cyan
-                Write-Host "  [S] Skip logging for those steps only" -ForegroundColor White
-                Write-Host "  [N] Disable logging entirely" -ForegroundColor White
-                Write-Host "  [Q] Quit" -ForegroundColor White
+                Write-Host "  [s] Skip logging for those steps only" -ForegroundColor White
+                Write-Host "  [d] Disable logging entirely" -ForegroundColor White
+                Write-Host "  [q] Quit" -ForegroundColor White
                 Write-Host ""
                 Write-Host "Choice? [" -NoNewline
                 Write-Host "A" -NoNewline -ForegroundColor Cyan
-                Write-Host "/s/n/q]: " -NoNewline
+                Write-Host "/s/d/q]: " -NoNewline
                 try {
                     $noLogChoice = Read-Host
                 } catch {
@@ -464,7 +492,7 @@ function New-Step {
                     's' {
                         $noLogIds = @($logConfig.NoLogStepIds)
                     }
-                    'n' {
+                    'd' {
                         $loggingEnabled = $false
                     }
                     'q' {
@@ -536,10 +564,10 @@ function New-Step {
 
                     Write-Host "How would you like to proceed?"
                     Write-Host ""
-                    Write-Host "  [R] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
+                    Write-Host "  [r] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
                     Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
-                    Write-Host "  [M] More details" -ForegroundColor White
-                    Write-Host "  [Q] Quit" -ForegroundColor White
+                    Write-Host "  [m] More details" -ForegroundColor White
+                    Write-Host "  [q] Quit" -ForegroundColor White
                     Write-Host ""
                     Write-Host "Choice? [" -NoNewline
                     Write-Host "r" -NoNewline -ForegroundColor White
@@ -570,9 +598,9 @@ function New-Step {
                         Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber -ShowHashComparison
 
                         # Re-display the bottom inline menu and accept an immediate choice
-                        Write-Host "  [R] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
+                        Write-Host "  [r] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
                         Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
-                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host "  [q] Quit" -ForegroundColor White
                         Write-Host ""
                         Write-Host "Choice? [r/S/q]: " -NoNewline
                         try {
@@ -667,9 +695,9 @@ function New-Step {
                         Write-Host "How would you like to proceed?"
                         Write-Host ""
                         Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
-                        Write-Host "  [S] Start over" -ForegroundColor White
-                        Write-Host "  [M] More details" -ForegroundColor White
-                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host "  [s] Start over" -ForegroundColor White
+                        Write-Host "  [m] More details" -ForegroundColor White
+                        Write-Host "  [q] Quit" -ForegroundColor White
                         Write-Host ""
                         Write-Host "Choice? [" -NoNewline
                         Write-Host "R" -NoNewline -ForegroundColor Cyan

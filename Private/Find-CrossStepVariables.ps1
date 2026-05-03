@@ -69,22 +69,28 @@ function Find-CrossStepVariables {
         $node.GetCommandName() -eq 'New-Step'
     }, $true) | Sort-Object { $_.Extent.StartLineNumber })
 
-    if ($newStepCalls.Count -lt 2) {
+    if ($newStepCalls.Count -lt 1) {
         return @()
     }
 
-    # For each New-Step, extract its scriptblock body
-    $stepBodies = @()
+    # For each New-Step, extract its scriptblock body; also track -Retry steps
+    $stepBodies      = @()
+    $retryStepBodies = @()
     foreach ($call in $newStepCalls) {
         $sb = $call.CommandElements |
             Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockExpressionAst] } |
             Select-Object -First 1
         if ($sb) {
             $stepBodies += $sb
+            $hasRetry = $call.CommandElements | Where-Object {
+                $_ -is [System.Management.Automation.Language.CommandParameterAst] -and
+                $_.ParameterName -eq 'Retry'
+            }
+            if ($hasRetry) { $retryStepBodies += $sb }
         }
     }
 
-    if ($stepBodies.Count -lt 2) {
+    if ($stepBodies.Count -lt 1) {
         return @()
     }
 
@@ -149,6 +155,83 @@ function Find-CrossStepVariables {
                     [void]$candidates.Add($varName)
                     break
                 }
+            }
+        }
+    }
+
+    # Build a set of offset ranges covered by step bodies so we can identify
+    # assignments that live in unmanaged (script-level) code
+    $stepBodyRanges = $stepBodies | ForEach-Object {
+        [PSCustomObject]@{ Start = $_.Extent.StartOffset; End = $_.Extent.EndOffset }
+    }
+
+    # Collect variables assigned at script scope (outside any New-Step body)
+    $unmanagedWrites = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+
+    $allAssignments = @($ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst]
+    }, $true))
+
+    foreach ($assign in $allAssignments) {
+        $offset = $assign.Extent.StartOffset
+        $insideStep = $false
+        foreach ($range in $stepBodyRanges) {
+            if ($offset -ge $range.Start -and $offset -lt $range.End) {
+                $insideStep = $true
+                break
+            }
+        }
+        if (-not $insideStep) {
+            $varName = $assign.Left.VariablePath.UserPath
+            if (-not $automaticVars.Contains($varName) -and $varName -ne 'Stepper') {
+                [void]$unmanagedWrites.Add($varName)
+            }
+        }
+    }
+
+    # Any variable written in unmanaged code and read inside any step is a candidate
+    foreach ($varName in $unmanagedWrites) {
+        foreach ($reads in $stepReads) {
+            if ($reads.Contains($varName)) {
+                [void]$candidates.Add($varName)
+                break
+            }
+        }
+    }
+
+    # Variables written AND read within the same -Retry step must use $Stepper.* to
+    # survive across retry attempts (local vars reset on every execution of the block)
+    foreach ($body in $retryStepBodies) {
+        $retryWrites = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+        $assignments = $body.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left -is [System.Management.Automation.Language.VariableExpressionAst]
+        }, $true)
+        foreach ($assign in $assignments) {
+            $varName = $assign.Left.VariablePath.UserPath
+            if (-not $automaticVars.Contains($varName) -and $varName -ne 'Stepper') {
+                [void]$retryWrites.Add($varName)
+            }
+        }
+
+        $varRefs = $body.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.VariableExpressionAst]
+        }, $true)
+        foreach ($ref in $varRefs) {
+            $varName = $ref.VariablePath.UserPath
+            # Skip if this is the direct LHS of an assignment (that's a write, not a read)
+            $isAssignLhs = $ref.Parent -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                           [object]::ReferenceEquals($ref.Parent.Left, $ref)
+            if (-not $isAssignLhs -and $retryWrites.Contains($varName)) {
+                [void]$candidates.Add($varName)
             }
         }
     }

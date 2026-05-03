@@ -57,6 +57,7 @@ function Add-StepperCbh {
             '#>'
         ) -join [System.Environment]::NewLine
         $newContent = $newCbh + [System.Environment]::NewLine + $content
+        New-StepperBackup -Path $ScriptPath | Out-Null
         Set-Content -Path $ScriptPath -Value $newContent -Encoding UTF8 -NoNewline
         return $true
     }
@@ -92,6 +93,7 @@ function Add-StepperCbh {
     }
 
     $newContent = $content.Remove($cbhStart, $cbhMatch.Length).Insert($cbhStart, $newCbhText)
+    New-StepperBackup -Path $ScriptPath | Out-Null
     Set-Content -Path $ScriptPath -Value $newContent -Encoding UTF8 -NoNewline
     return $true
 }

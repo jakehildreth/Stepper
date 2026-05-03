@@ -26,7 +26,7 @@ Logging is enabled for every step unless the user explicitly passes `-NoLog` to 
 
 - **A** — log all steps (ignore `-NoLog` flags)
 - **S** — skip logging for the flagged steps only
-- **N** — disable logging entirely
+- **D** — disable logging entirely
 
 This decision is persisted in the `.stepper` state file so resumed runs do not re-prompt.
 
