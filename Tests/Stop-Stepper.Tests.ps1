@@ -191,6 +191,9 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
 
         It 'Writes a non-terminating error' {
+            # GHA sets $ErrorActionPreference = 'Stop' globally; override here so
+            # $PSCmdlet.WriteError() writes to the error stream instead of throwing
+            $ErrorActionPreference = 'Continue'
             $result = Stop-Stepper 2>&1
             $errRecords = @($result | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
             $errRecords.Count | Should -Be 1
@@ -198,6 +201,7 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
 
         It 'Does not rethrow' {
+            $ErrorActionPreference = 'Continue'
             { Stop-Stepper 2>&1 | Out-Null } | Should -Not -Throw
         }
     }
