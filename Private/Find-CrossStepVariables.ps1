@@ -12,7 +12,7 @@ function Find-CrossStepVariables {
         - Variables already accessed via $Stepper.* member notation
         - PowerShell automatic variables ($_, $Error, $PSScriptRoot, etc.)
 
-        This function is used by Convert-StepperScript to identify candidates for
+        This function is used by ConvertTo-StepperScript to identify candidates for
         $Stepper.<var> conversion.
 
     .PARAMETER ScriptPath
