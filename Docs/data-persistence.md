@@ -41,7 +41,7 @@ Stepper stores state in `<scriptname>.ps1.stepper` alongside the script, using P
 | `Timestamp` | ISO 8601 datetime |
 | `StepperData` | Serialized `$Stepper` hashtable |
 | `LogPath` | Resolved path to the log file, or `$null` if logging is disabled |
-| `LoggingEnabled` | `$true` unless the user chose `[N]` at the scope prompt |
+| `LoggingEnabled` | `$true` unless the user chose `[d]` at the scope prompt |
 | `NoLogStepIds` | Array of `filepath:lineNumber` identifiers for steps with `-NoLog` |
 
 **Manual inspection:**
@@ -50,4 +50,4 @@ Stepper stores state in `<scriptname>.ps1.stepper` alongside the script, using P
 Import-Clixml .\myscript.ps1.stepper
 ```
 
-Manual deletion is always safe — the next run simply starts fresh.
+Manual deletion is always safe; the next run simply starts fresh.

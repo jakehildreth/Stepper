@@ -233,7 +233,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Resume logic — script unchanged' {
+    Context 'Resume logic: script unchanged' {
         BeforeEach {
             # Two-step script: step 1 was completed, step 2 should run on resume
             $script:ResumeInfo = New-TestStepperScript -BaseName "resume-$(New-Guid)" -StepCount 2
@@ -259,7 +259,7 @@ Describe 'New-Step' -Tag 'Integration' {
             Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
         }
 
-        It 'Skips step 1 (already completed) — state not updated for skipped step' {
+        It 'Skips step 1 (already completed): state not updated for skipped step' {
             # Call step 1 (should be skipped). The state file should NOT be updated
             # (no re-write for a skipped step). The pre-existing hash should still match.
             New-Step { }
@@ -289,7 +289,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Resume logic — Start over' {
+    Context 'Resume logic: Start over' {
         BeforeEach {
             $script:StartOverInfo = New-TestStepperScript -BaseName "startover-$(New-Guid)" -StepCount 2
             $step1Id = "$($script:StartOverInfo.Path):$($script:StartOverInfo.FirstStepLine)"
@@ -329,7 +329,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Resume logic — changed script defaults to Start over' {
+    Context 'Resume logic: changed script defaults to Start over' {
         BeforeEach {
             $script:ChangedInfo = New-TestStepperScript -BaseName "changed-$(New-Guid)" -StepCount 2
             $step1Id = "$($script:ChangedInfo.Path):$($script:ChangedInfo.FirstStepLine)"
@@ -369,7 +369,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Missing Stop-Stepper — user chooses A (add)' {
+    Context 'Missing Stop-Stepper: user chooses A (add)' {
         BeforeEach {
             # Script without Stop-Stepper
             $script:NoStopPath = Join-Path $TestDrive "nostop-$(New-Guid).ps1"
@@ -396,7 +396,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Missing Stop-Stepper — user chooses C (continue)' {
+    Context 'Missing Stop-Stepper: user chooses C (continue)' {
         BeforeEach {
             $script:NoStopContinuePath = Join-Path $TestDrive "nostop-c-$(New-Guid).ps1"
             Set-Content -Path $script:NoStopContinuePath -Value @(
@@ -421,7 +421,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — default log path' {
+    Context 'Logging: default log path' {
         BeforeEach {
             $script:LogDefaultInfo = New-TestStepperScript -BaseName 'log-default'
             Mock Get-StepIdentifier { "$($script:LogDefaultInfo.Path):$($script:LogDefaultInfo.FirstStepLine)" }
@@ -444,7 +444,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — explicit -LogPath parameter' {
+    Context 'Logging: explicit -LogPath parameter' {
         BeforeEach {
             $script:LogExplicitInfo = New-TestStepperScript -BaseName 'log-explicit'
             $script:ExplicitLogPath = Join-Path $TestDrive 'explicit.log'
@@ -462,7 +462,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — conflicting -LogPath values prompt user' {
+    Context 'Logging: conflicting -LogPath values prompt user' {
         BeforeEach {
             $script:ConflictInfo = New-TestStepperScript -BaseName 'log-conflict'
             Mock Get-StepIdentifier { "$($script:ConflictInfo.Path):$($script:ConflictInfo.FirstStepLine)" }
@@ -485,7 +485,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — runtime -LogPath mismatch writes warning' {
+    Context 'Logging: runtime -LogPath mismatch writes warning' {
         BeforeEach {
             $script:MismatchInfo = New-TestStepperScript -BaseName 'log-mismatch'
             $script:ResolvedLog = Join-Path $TestDrive 'resolved.log'
@@ -503,7 +503,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — active transcript causes hard stop' {
+    Context 'Logging: active transcript causes hard stop' {
         BeforeEach {
             $script:TranscriptInfo = New-TestStepperScript -BaseName 'log-transcript'
             Mock Get-StepIdentifier { "$($script:TranscriptInfo.Path):$($script:TranscriptInfo.FirstStepLine)" }
@@ -525,7 +525,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — transcript section in log file' {
+    Context 'Logging: transcript section in log file' {
         BeforeEach {
             $script:TranscriptLogInfo = New-TestStepperScript -BaseName 'log-transcript-section'
             $script:TranscriptLogPath = Join-Path $TestDrive 'transcript-test.log'
@@ -554,7 +554,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — failure writes ERROR entry to log' {
+    Context 'Logging: failure writes ERROR entry to log' {
         BeforeEach {
             $script:FailLogInfo = New-TestStepperScript -BaseName 'log-fail'
             $script:FailLogPath = Join-Path $TestDrive 'fail-test.log'
@@ -585,7 +585,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — skipped steps written to log on resume' {
+    Context 'Logging: skipped steps written to log on resume' {
         BeforeEach {
             $script:SkipLogInfo  = New-TestStepperScript -BaseName "log-skip-$(New-Guid)" -StepCount 2
             $script:SkipLogPath  = Join-Path $TestDrive 'skip-test.log'
@@ -612,8 +612,8 @@ Describe 'New-Step' -Tag 'Integration' {
         }
 
         It 'Should write a Skipping log entry for a previously completed step' {
-            New-Step { }   # step 1 — skipped (last completed)
-            New-Step { }   # step 2 — runs
+            New-Step { }   # step 1, skipped (last completed)
+            New-Step { }   # step 2, runs
             $logContent = Get-Content -Path $script:SkipLogPath -Raw -ErrorAction SilentlyContinue
             $logContent | Should -Match 'Skipping step \d+/\d+'
         }
@@ -655,7 +655,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — -NoLog step scope prompt' {
+    Context 'Logging: -NoLog step scope prompt' {
         BeforeEach {
             $script:NoLogInfo = New-TestStepperScript -BaseName 'log-nolog'
             Mock Get-StepIdentifier { "$($script:NoLogInfo.Path):$($script:NoLogInfo.FirstStepLine)" }
@@ -684,7 +684,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — disabled-step marker written to log' {
+    Context 'Logging: disabled-step marker written to log' {
         BeforeEach {
             $script:DisabledLogInfo = New-TestStepperScript -BaseName 'log-disabled'
             $script:DisabledLogPath = Join-Path $TestDrive 'disabled-step.log'
@@ -716,7 +716,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — step name included in log messages' {
+    Context 'Logging: step name included in log messages' {
         BeforeEach {
             $script:NamedLogInfo = New-TestStepperScript -BaseName 'log-named-step'
             $script:NamedLogPath = Join-Path $TestDrive 'named-step.log'
@@ -752,7 +752,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — skipped steps written to log on resume' {
+    Context 'Logging: skipped steps written to log on resume' {
         BeforeEach {
             $script:SkipLogInfo = New-TestStepperScript -BaseName "log-skip-$(New-Guid)" -StepCount 2
             $script:SkipLogPath = Join-Path $TestDrive 'skip-test.log'
@@ -793,7 +793,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — parameter validation' {
+    Context 'Retry: parameter validation' {
         BeforeEach {
             $script:RetryValInfo = New-TestStepperScript -BaseName "retry-val-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetryValInfo.Path):$($script:RetryValInfo.FirstStepLine)" }
@@ -821,7 +821,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — single-attempt behavior unchanged without -Retry' {
+    Context 'Retry: single-attempt behavior unchanged without -Retry' {
         BeforeEach {
             $script:NoRetryInfo = New-TestStepperScript -BaseName "no-retry-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:NoRetryInfo.Path):$($script:NoRetryInfo.FirstStepLine)" }
@@ -853,7 +853,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — success on first attempt does not trigger retry' {
+    Context 'Retry: success on first attempt does not trigger retry' {
         BeforeEach {
             $script:RetrySuccessInfo = New-TestStepperScript -BaseName "retry-ok-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetrySuccessInfo.Path):$($script:RetrySuccessInfo.FirstStepLine)" }
@@ -875,7 +875,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — step fails once then succeeds' {
+    Context 'Retry: step fails once then succeeds' {
         BeforeEach {
             $script:RetryOnceInfo = New-TestStepperScript -BaseName "retry-once-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetryOnceInfo.Path):$($script:RetryOnceInfo.FirstStepLine)" }
@@ -915,7 +915,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — all retries exhausted' {
+    Context 'Retry: all retries exhausted' {
         BeforeEach {
             $script:RetryExhaustedInfo = New-TestStepperScript -BaseName "retry-exhaust-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetryExhaustedInfo.Path):$($script:RetryExhaustedInfo.FirstStepLine)" }
@@ -962,7 +962,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — exponential backoff wait times' {
+    Context 'Retry: exponential backoff wait times' {
         BeforeEach {
             $script:RetryBackoffInfo = New-TestStepperScript -BaseName "retry-backoff-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetryBackoffInfo.Path):$($script:RetryBackoffInfo.FirstStepLine)" }
@@ -995,7 +995,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — events logged via Write-StepperLog' {
+    Context 'Retry: events logged via Write-StepperLog' {
         BeforeEach {
             $script:RetryLogInfo = New-TestStepperScript -BaseName "retry-log-$(New-Guid)"
             $script:RetryLogPath = Join-Path $TestDrive "retry-events-$(New-Guid).log"
@@ -1047,7 +1047,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — elapsed time reporting' {
+    Context 'Retry: elapsed time reporting' {
         BeforeEach {
             $script:RetryElapsedInfo = New-TestStepperScript -BaseName "retry-elapsed-$(New-Guid)"
             $script:RetryElapsedLogPath = Join-Path $TestDrive "retry-elapsed-$(New-Guid).log"
@@ -1085,7 +1085,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — partial transcript per failed attempt' {
+    Context 'Retry: partial transcript per failed attempt' {
         BeforeEach {
             $script:RetryTranscriptInfo = New-TestStepperScript -BaseName "retry-transcript-$(New-Guid)"
             $script:RetryTranscriptLogPath = Join-Path $TestDrive "retry-transcript-$(New-Guid).log"
@@ -1127,7 +1127,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — warning when RetryInterval or MaxRetries used without -Retry' {
+    Context 'Retry: warning when RetryInterval or MaxRetries used without -Retry' {
         BeforeEach {
             $script:RetryWarnInfo = New-TestStepperScript -BaseName "retry-warn-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:RetryWarnInfo.Path):$($script:RetryWarnInfo.FirstStepLine)" }
@@ -1159,7 +1159,7 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Retry — visual indicator on Write-Host' {
+    Context 'Retry: visual indicator on Write-Host' {
         BeforeEach {
             $script:VisualIndicatorInfo = New-TestStepperScript -BaseName "retry-visual-$(New-Guid)"
             Mock Get-StepIdentifier { "$($script:VisualIndicatorInfo.Path):$($script:VisualIndicatorInfo.FirstStepLine)" }

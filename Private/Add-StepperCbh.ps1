@@ -42,7 +42,7 @@ function Add-StepperCbh {
     $cbhMatch   = [regex]::Match($content, $cbhPattern)
 
     if (-not $cbhMatch.Success) {
-        # No CBH at all — insert a full block at the very top
+        # No CBH at all... insert a full block at the very top
         $scriptName = [System.IO.Path]::GetFileNameWithoutExtension($ScriptPath)
         $newCbh     = @(
             '<#'
@@ -70,12 +70,12 @@ function Add-StepperCbh {
         return $false
     }
 
-    # CBH exists — does it have a .NOTES section?
+    # CBH exists... does it have a .NOTES section?
     $notesPattern = '(?s)(\.NOTES\s*\r?\n)(.*?)(\r?\n\s*(?:\.[A-Z]|#>))'
     $notesMatch   = [regex]::Match($cbhText, $notesPattern)
 
     if ($notesMatch.Success) {
-        # .NOTES exists — append blurb inside it
+        # .NOTES exists... append blurb inside it
         $insertion = $notesMatch.Groups[1].Value +
                      $notesMatch.Groups[2].Value +
                      [System.Environment]::NewLine + "    $stepperBlurb" +
@@ -84,7 +84,7 @@ function Add-StepperCbh {
             $notesMatch.Index, $insertion
         )
     } else {
-        # No .NOTES — insert one before closing #>
+        # No .NOTES... insert one before closing #>
         $closeIdx  = $cbhText.LastIndexOf('#>')
         $notesBlock = [System.Environment]::NewLine + ".NOTES" +
                       [System.Environment]::NewLine + "    $stepperBlurb" +

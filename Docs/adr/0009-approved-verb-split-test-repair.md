@@ -1,4 +1,4 @@
-# ADR 0009: Approved verb split — Test-StepperScript and Repair-StepperScript; Validate- rejected
+# ADR 0009: Approved verb split: Test-StepperScript and Repair-StepperScript; Validate- rejected
 
 **Date:** 2026-05-01
 **Status:** Accepted
@@ -13,8 +13,8 @@ The initial feature request used "Validate-StepperScript" as a working name for 
 `Validate` is not in the PowerShell approved verb list (`Get-Verb` returns no match for `Validate`). Using an unapproved verb causes `Test-ModuleManifest` warnings and breaks `PSScriptAnalyzer` lint rules. It also confuses tab-completion and discoverability.
 
 The approved verbs covering the intended semantics are:
-- `Test-` — performs a check and returns a result (boolean or structured)
-- `Repair-` — fixes something that is broken or incomplete
+- `Test-` : performs a check and returns a result (boolean or structured)
+- `Repair-` : fixes something that is broken or incomplete
 
 Both semantics are needed: users may want to check without modifying (CI pipeline, pre-flight review), and users may want to automatically fix issues (first-run hook, developer setup).
 

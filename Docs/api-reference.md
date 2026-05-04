@@ -13,7 +13,7 @@ New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-Re
 |---|---|---|---|
 | `Name` | `string` | No | Display name shown in prompts and verbose output |
 | `ScriptBlock` | `scriptblock` | Yes | The code to execute |
-| `LogPath` | `string` | No | Path to the log file. Overrides the default (`<scriptname>.ps1.stepper.log`). Only needs to be specified once — Stepper resolves it via AST scan at init time. |
+| `LogPath` | `string` | No | Path to the log file. Overrides the default (`<scriptname>.ps1.stepper.log`). Only needs to be specified once. Stepper resolves it via AST scan at init time. |
 | `NoLog` | `switch` | No | Exclude this step from logging. At init time Stepper prompts to choose scope: log all / skip flagged / disable entirely. |
 | `Retry` | `switch` | No | Enable exponential backoff retry for this step. |
 | `RetryInterval` | `int` | No | Base interval in seconds between retries. Each attempt waits `RetryInterval * 2^attempt` seconds. Default: `60`. Minimum: `1`. Requires `-Retry`. |
@@ -23,6 +23,27 @@ New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-Re
 Must be called from a saved `.ps1` file. Does not work from the console or an unsaved editor buffer.
 
 See [Logging](logging.md) for full details on log format, step transcripts, and active transcript conflict handling.
+
+### Retry Behavior
+
+When `-Retry` is specified, the `ScriptBlock` runs inside an exponential backoff loop:
+v
+- On each failure, Stepper waits `RetryInterval * 2^attempt` seconds and retries
+- The loop continues until the block succeeds or `MaxRetries` is exhausted
+- If all attempts fail, Stepper propagates a terminating error and stops
+
+**Important: local variables reset on every execution.** The `ScriptBlock` is re-invoked from scratch on each retry, so any local variable you assign is re-initialized on the next attempt. Use `$Stepper.*` keys to accumulate state across retries:
+
+```powershell
+New-Step 'Call API' -Retry -RetryInterval 5 -MaxRetries 4 {
+    if ($null -eq $Stepper.RetryCount) { $Stepper.RetryCount = 0 }
+    $Stepper.RetryCount++
+    Write-Host "Attempt $($Stepper.RetryCount)..."
+    Invoke-RestMethod https://api.example.com/data
+}
+```
+
+`$Stepper.RetryCount` persists because it is stored in the `$Stepper` hashtable, which is serialized to the state file and restored between attempts.
 
 ## `Stop-Stepper`
 
@@ -51,7 +72,7 @@ New-StepperScript [-Name] <string> [-Directory <string>] [-Force] [-Showcase]
 | `Force` | `switch` | No | Overwrite if the target file already exists |
 | `Showcase` | `switch` | No | Generate the full feature-showcase template (aliases: `-Full`, `-Detailed`, `-WithExamples`) |
 
-Returns `[System.IO.FileInfo]` — the created file, suitable for pipeline use.
+Returns `[System.IO.FileInfo]`: the created file, suitable for pipeline use.
 
 Both the minimal and showcase templates pass `Test-StepperScript` with `IsValid = $true` out of the box.
 
@@ -111,13 +132,48 @@ Fixes applied automatically:
 
 The following are reported via `Write-Warning` but **not** automatically fixed (require author decision):
 
-- `MissingStopStepper` — placement depends on script structure
-- `NoSteps` — may be intentional during authoring
+- `MissingStopStepper`: placement depends on script structure
+- `NoSteps`: may be intentional during authoring
 
 Returns the post-fix result of `Test-StepperScript`. If no changes were needed, the script file is not modified. Supports `-WhatIf`.
 
+## `ConvertTo-StepperScript`
+
+Detects variables that cross step boundaries and rewrites them to `$Stepper.<Var>` notation so they persist across steps and resume correctly after a crash.
+
+Called automatically on first run via `New-Step` when the conversion sentinel (`$StepperConversionComplete`) is absent. Can also be run manually at any time.
+
+```powershell
+ConvertTo-StepperScript [-Path] <string> [-OutputPath <string>] [-Force] [-WhatIf]
+ConvertTo-StepperScript -Name <string> [-Directory <string>] [-OutputPath <string>] [-Force] [-WhatIf]
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `Path` | `string` | Yes (ByPath) | Path to the `.ps1` file to convert |
+| `Name` | `string` | Yes (ByName) | Script name with or without `.ps1`. Used with `-Directory` |
+| `Directory` | `string` | No | Directory for `-Name` mode. Defaults to `$PWD` |
+| `OutputPath` | `string` | No | Write converted content here instead of modifying the source. No backup is created when set |
+| `Force` | `switch` | No | Skip per-variable confirmation and convert all candidates |
+
+**Variable detection rules.** A variable is a candidate if it is:
+
+1. Assigned in one `New-Step` block and read in a later block
+2. Assigned in unmanaged (script-level) code and read inside any step
+3. Both assigned and read inside the same `-Retry` step (local variables reset on every retry attempt)
+
+When candidates are found, ConvertTo prompts for each:
+
+```
+[Y] Yes (default)   [n] No, skip   [a] All, convert remaining   [q] Quit
+```
+
+On completion, `$StepperConversionComplete = $true` is injected inside `#region Stepper ignore`. `New-Step` checks for this sentinel and skips the conversion hook on all subsequent runs.
+
+A timestamped backup (`<BaseName>.<yyyy.M.dHHmm>.ps1.bak`) is created alongside the script before any write.
+
 ## Error Handling
 
-- If a step throws, Stepper propagates a terminating error with step context (identifier, name, number). State is **not** saved for the failed step — on resume, that step re-executes.
+- If a step throws, Stepper propagates a terminating error with step context (identifier, name, number). State is **not** saved for the failed step. On resume, that step re-executes.
 - `[CmdletBinding()]` in the calling script is required for error propagation to work correctly. Stepper auto-injects it if missing (see [How It Works](how-it-works.md)).
 - All file I/O errors are surfaced as typed `ErrorRecord` objects, not raw exceptions.

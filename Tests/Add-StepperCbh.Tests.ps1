@@ -196,7 +196,7 @@ Describe 'Add-StepperCbh' -Tag 'Unit' {
             )
 
             try {
-                # Act / Assert — if exit is called Pester would catch an ExitException
+                # Act / Assert; if exit is called Pester would catch an ExitException
                 { Add-StepperCbh -ScriptPath $path } | Should -Not -Throw
             }
             finally {

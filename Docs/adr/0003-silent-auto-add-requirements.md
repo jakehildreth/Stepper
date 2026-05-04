@@ -12,10 +12,10 @@
 
 This behavior is problematic:
 
-1. **Blocks automation** — any CI/CD pipeline or unattended run hangs indefinitely waiting for interactive input.
-2. **Surprises users** — an unexpected halt mid-execution on first run violates the principle of least surprise.
-3. **Violates module design principles** — `Read-Host` is explicitly against Stepper's non-interactive design pattern.
-4. **"Skip" is a footgun** — silently continuing without the required declarations causes unpredictable failures downstream, making it the worst option despite being the easiest to reach.
+1. **Blocks automation**: any CI/CD pipeline or unattended run hangs indefinitely waiting for interactive input.
+2. **Surprises users**: an unexpected halt mid-execution on first run violates the principle of least surprise.
+3. **Violates module design principles**: `Read-Host` is explicitly against Stepper's non-interactive design pattern.
+4. **"Skip" is a footgun**: silently continuing without the required declarations causes unpredictable failures downstream, making it the worst option despite being the easiest to reach.
 
 The only safe response in the old dialog was always "Add". The "Skip" and "Quit" paths offer false choice.
 
@@ -27,14 +27,14 @@ Replace the interactive prompt with silent auto-add behavior:
 
 - If declarations are missing, add them and return `$true` without any user prompt.
 - Emit one `Write-Verbose` call per declaration added.
-- Delete any existing state file (same as before — the script has structurally changed).
+- Delete any existing state file (same as before; the script has structurally changed).
 - Add a `-SkipRequirementsCheck` `[switch]` parameter to `New-Step` for callers who want to bypass the check entirely.
 
 ---
 
 ## Rationale
 
-Silent auto-add preserves the original intent (ensure the script is properly structured) while eliminating interactive friction. Since "Add" was the only safe option in the old prompt, auto-add is semantically equivalent to the old default. `Write-Verbose` satisfies observability without blocking execution — users running with `-Verbose` see exactly what changed.
+Silent auto-add preserves the original intent (ensure the script is properly structured) while eliminating interactive friction. Since "Add" was the only safe option in the old prompt, auto-add is semantically equivalent to the old default. `Write-Verbose` satisfies observability without blocking execution; users running with `-Verbose` see exactly what changed.
 
 The `-SkipRequirementsCheck` escape hatch gives advanced users who consciously manage their own declarations a clean opt-out, without requiring workarounds or file hacks.
 

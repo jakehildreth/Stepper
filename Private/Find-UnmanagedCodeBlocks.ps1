@@ -9,7 +9,7 @@ function Find-UnmanagedCodeBlocks {
           - #region Stepper ignore / #endregion Stepper ignore regions
           - Executable lines via AST statement extents rather than a regex whitelist
 
-        Parameter signature is unchanged from the regex implementation — $ScriptLines is
+        Parameter signature is unchanged from the regex implementation. $ScriptLines is
         joined internally for parsing, and line indices in the return value remain 0-based.
 
     .PARAMETER ScriptLines
@@ -40,7 +40,7 @@ function Find-UnmanagedCodeBlocks {
 
     $unmanagedBlocks = @()
 
-    # Parse via AST — join lines so token extents match 0-based array indices (+1 for 1-based)
+    # Parse via AST. Join lines so token extents match 0-based array indices (+1 for 1-based)
     $scriptContent = $ScriptLines -join [System.Environment]::NewLine
     $tokens = $null
     $parseErrors = $null

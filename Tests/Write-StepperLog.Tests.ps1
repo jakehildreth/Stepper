@@ -56,7 +56,7 @@ Describe 'Write-StepperLog' -Tag 'Unit' {
         }
     }
 
-    Context 'File output — LogPath provided' {
+    Context 'File output: LogPath provided' {
         BeforeEach {
             $LogPath = Join-Path $TestDrive "stepper-$(New-Guid).log"
         }
@@ -96,7 +96,7 @@ Describe 'Write-StepperLog' -Tag 'Unit' {
         }
     }
 
-    Context 'File output — LogPath not provided' {
+    Context 'File output: LogPath not provided' {
         It 'Should not create any file when LogPath is omitted' {
             $dir = $TestDrive
             $before = (Get-ChildItem -Path $dir -Recurse).Count

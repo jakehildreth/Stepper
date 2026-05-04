@@ -106,9 +106,9 @@ function ConvertTo-StepperScript {
             Write-Host "?"
             Write-Host ""
             Write-Host "  [Y] Yes (Default)" -ForegroundColor Cyan
-            Write-Host "  [n] No — skip this variable" -ForegroundColor White
-            Write-Host "  [a] All — convert all remaining candidates" -ForegroundColor White
-            Write-Host "  [q] Quit — stop conversion" -ForegroundColor White
+            Write-Host "  [n] No, skip this variable" -ForegroundColor White
+            Write-Host "  [a] All, convert all remaining candidates" -ForegroundColor White
+            Write-Host "  [q] Quit, stop conversion" -ForegroundColor White
             Write-Host ""
             Write-Host "Choice? [" -NoNewline
             Write-Host "Y" -NoNewline -ForegroundColor Cyan
@@ -183,7 +183,7 @@ function ConvertTo-StepperScript {
         }
     }
 
-    # Also collect occurrences in unmanaged (script-level) code — outside all step bodies.
+    # Also collect occurrences in unmanaged (script-level) code, outside all step bodies.
     # Variables assigned there and read in steps are candidates too, and their script-level
     # uses must be rewritten so they stay in sync with $Stepper.<Var>.
     $stepBodyRanges = $stepBodies | ForEach-Object {
@@ -247,7 +247,7 @@ function ConvertTo-StepperScript {
             '$StepperConversionComplete = $true' + $nl +
             $content.Substring($endRegionIndex)
     } else {
-        # No existing ignore region — create a new one before the first New-Step call
+        # No existing ignore region; create a new one before the first New-Step call
         $sentinelAst = [System.Management.Automation.Language.Parser]::ParseInput(
             $content, [ref]$null, [ref]$null
         )

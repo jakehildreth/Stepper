@@ -20,24 +20,24 @@ function New-Issue {
 
 This pattern has several problems:
 
-1. **Redefined on every call** — PowerShell re-parses and rebinds the nested function
+1. **Redefined on every call**: PowerShell re-parses and rebinds the nested function
    definition each time `Test-StepperScript` is invoked. No caching, no reuse.
-2. **Violates one-function-per-file** — project convention (enforced for `New-StepperScript`
+2. **Violates one-function-per-file**: project convention (enforced for `New-StepperScript`
    in the same codebase) requires each function to live in its own `.ps1` file.
-3. **No `[CmdletBinding()]`** — the nested function lacks the required attribute, making it
+3. **No `[CmdletBinding()]`**: the nested function lacks the required attribute, making it
    a simple function rather than an advanced function. No common parameters, no
    `$PSCmdlet` support.
-4. **No comment-based help** — undiscoverable and undocumented.
-5. **No `ValidateSet` on `$Severity`** — callers could pass any string; the private file
+4. **No comment-based help**: undiscoverable and undocumented.
+5. **No `ValidateSet` on `$Severity`**: callers could pass any string; the private file
    adds `[ValidateSet('Error', 'Warning')]` to enforce the domain values.
-6. **Not independently testable** — nested scope means it cannot be dot-sourced or
+6. **Not independently testable**: nested scope means it cannot be dot-sourced or
    unit-tested in isolation.
 
 Two alternatives were considered:
 
-- **Inline the `[PSCustomObject]@{}` at each call site** — removes the function entirely
+- **Inline the `[PSCustomObject]@{}` at each call site**: removes the function entirely
   but duplicates the object shape at 5 call sites. Harder to change the shape later.
-- **Extract to `Private/New-StepperIssue.ps1`** — single source of truth, independently
+- **Extract to `Private/New-StepperIssue.ps1`**: single source of truth, independently
   testable, follows project conventions, gets `[CmdletBinding()]` and CBH for free.
 
 ---
@@ -58,7 +58,7 @@ The test file's `BeforeAll` dot-sources it explicitly alongside the other privat
 
 ## Consequences
 
-- `Test-StepperScript` is simpler — no nested function definition in the body.
+- `Test-StepperScript` is simpler; no nested function definition in the body.
 - `New-StepperIssue` is independently testable if issue-object shape ever needs to change.
 - `[ValidateSet('Error', 'Warning')]` on `$Severity` makes invalid severity strings a
   parse-time error rather than a silent bug.

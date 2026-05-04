@@ -20,9 +20,9 @@ function Get-StepLogConfig {
 
     .OUTPUTS
         PSCustomObject with properties:
-          UniqueStaticLogPaths  — string[] of distinct resolved -LogPath values (may include '<dynamic>')
-          HasConflict           — bool; $true when UniqueStaticLogPaths.Count -gt 1
-          NoLogStepIds          — string[] of "ScriptPath:LineNumber" for -NoLog steps
+          UniqueStaticLogPaths: string[] of distinct resolved -LogPath values (may include '<dynamic>')
+          HasConflict: bool; $true when UniqueStaticLogPaths.Count -gt 1
+          NoLogStepIds: string[] of "ScriptPath:LineNumber" for -NoLog steps
     #>
     [CmdletBinding()]
     param(

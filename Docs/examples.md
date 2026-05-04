@@ -7,7 +7,7 @@
 param()
 
 #region Stepper ignore
-# This runs every time — safe to leave outside New-Step
+# This runs every time. Safe to leave outside New-Step
 $outputDir = Join-Path $PSScriptRoot 'output'
 #endregion Stepper ignore
 
@@ -25,7 +25,7 @@ New-Step 'Download Data' {
 }
 
 New-Step {
-    # Unnamed step — backward-compatible syntax
+    # Unnamed step (backward-compatible syntax)
     foreach ($file in $Stepper.Files) {
         Write-Host "Processing $file in $($Stepper.OutputDir)..."
     }

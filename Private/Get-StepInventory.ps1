@@ -13,9 +13,9 @@ function Get-StepInventory {
 
     .OUTPUTS
         PSCustomObject with properties:
-          StepLines  — string[] of "$ScriptPath:$lineNumber" (1-based), one per step
-          StepNames  — string[] (or $null entries) of step names in the same order
-          TotalSteps — int count of steps
+          StepLines: string[] of "$ScriptPath:$lineNumber" (1-based), one per step
+          StepNames: string[] (or $null entries) of step names in the same order
+          TotalSteps: int count of steps
 
     .NOTES
         StepLines format matches Get-StepIdentifier output so callers can use IndexOf() to

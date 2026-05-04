@@ -33,7 +33,7 @@ function New-StepperScript {
         Generate the full feature-showcase template instead of the minimal skeleton.
 
     .OUTPUTS
-        System.IO.FileInfo — the created file, suitable for pipeline use.
+        System.IO.FileInfo: the created file, suitable for pipeline use.
 
     .EXAMPLE
         New-StepperScript -Path './Deploy.ps1'

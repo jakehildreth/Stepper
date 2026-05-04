@@ -49,9 +49,9 @@ Stop-Stepper   # removes the state file on successful completion
 
 If the script fails inside a `New-Step` block, the next run resumes at the step that failed. All previously completed steps are skipped!
 
-On first run, Stepper checks for `[CmdletBinding()]` and the self-install guard independently — each is silently injected if missing (the guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings), then Stepper exits and asks you to re-run. Nothing is required beyond what's shown above.
+On first run, Stepper checks for `[CmdletBinding()]` and the self-install guard independently. Each component is silently injected if missing (the guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings), then Stepper exits and asks you to re-run. Nothing is required beyond what's shown above.
 
-Stepper also logs every step — execution timing, host output, and a per-step transcript — to `<scriptname>.ps1.stepper.log` by default. No configuration required.
+Stepper also logs every step's execution timing, host output, and a per-step transcript to `<scriptname>.ps1.stepper.log` by default. No configuration required.
 
 ---
 
@@ -65,12 +65,12 @@ Created with [VHS](https://github.com/charmbracelet/vhs) by [Charm](https://char
 
 ## Learn More
 
-- [How It Works](Docs/how-it-works.md) — execution lifecycle, resume logic, verbose output, non-interactive mode
-- [Named Steps](Docs/named-steps.md) — step names, `$Stepper.StepName`, resume prompt formats
-- [Data Persistence](Docs/data-persistence.md) — `$Stepper` hashtable, state file schema
-- [Logging](Docs/logging.md) — log files, step transcripts, `-LogPath`, `-NoLog`
-- [Unmanaged Code](Docs/unmanaged-code.md) — detection, `#region Stepper ignore`, interactive resolution
-- [API Reference](Docs/api-reference.md) — `New-Step`, `Stop-Stepper`, `New-StepperScript`, `Test-StepperScript`, `Repair-StepperScript`
+- [How It Works](Docs/how-it-works.md): execution lifecycle, resume logic, verbose output, non-interactive mode
+- [Named Steps](Docs/named-steps.md): step names, `$Stepper.StepName`, resume prompt formats
+- [Data Persistence](Docs/data-persistence.md): `$Stepper` hashtable, state file schema
+- [Logging](Docs/logging.md): log files, step transcripts, `-LogPath`, `-NoLog`
+- [Unmanaged Code](Docs/unmanaged-code.md): detection, `#region Stepper ignore`, interactive resolution
+- [API Reference](Docs/api-reference.md): `New-Step`, `Stop-Stepper`, `New-StepperScript`, `Test-StepperScript`, `Repair-StepperScript`, `ConvertTo-StepperScript`
 - [Examples](Docs/examples.md)
 - [Troubleshooting](Docs/troubleshooting.md)
 

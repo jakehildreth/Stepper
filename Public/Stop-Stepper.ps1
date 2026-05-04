@@ -84,7 +84,7 @@ function Stop-Stepper {
                     $logPath = $execState.Value.LogPath
                 }
             } catch {
-                # Ignore — log path optional
+                # Ignore; log path optional
             }
 
             $statePath = Get-StepperStatePath -ScriptPath $scriptPath

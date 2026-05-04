@@ -22,7 +22,7 @@ New-Step 'Install Packages' -LogPath 'C:\Logs\deploy.log' {
 }
 ```
 
-You only need to specify `-LogPath` once — Stepper uses the first value found via AST scan and applies it to all steps. If multiple steps specify **different** `-LogPath` values, Stepper prompts at init time to choose one. Dynamic paths (variables or expressions) cannot be resolved at scan time; the first runtime value wins and a warning is emitted if a later step provides a different one.
+You only need to specify `-LogPath` once in the script. Stepper uses the first value found via AST scan and applies it to all steps. If multiple steps specify **different** `-LogPath` values, Stepper prompts at init time to choose one. Dynamic paths (variables or expressions) cannot be resolved at scan time; the first runtime value wins and a warning is emitted if a later step provides a different one.
 
 If the directory for the specified `-LogPath` does not exist, Stepper throws a terminating error before executing any steps.
 
@@ -42,15 +42,15 @@ When `-NoLog` is present on any step, Stepper prompts at init time:
 
 ```
 One or more steps have -NoLog. How should logging be scoped?
-[A] Log all steps   [S] Skip only flagged steps   [N] Disable entirely   [Q] Quit
+[A] Log all steps (default)   [s] Skip only flagged steps   [d] Disable entirely   [q] Quit
 ```
 
 | Choice | Behavior |
 |---|---|
-| `[A]` | Log all steps, ignore `-NoLog` flags |
-| `[S]` | Skip transcript/log for flagged steps only |
-| `[D]` | Disable logging entirely for this run |
-| `[Q]` | Exit without running |
+| `[A]` | Log all steps, ignore `-NoLog` flags (default) |
+| `[s]` | Skip transcript/log for flagged steps only |
+| `[d]` | Disable logging entirely for this run |
+| `[q]` | Exit without running |
 
 In non-interactive mode (CI/CD, remoting), the default is `[A]`.
 

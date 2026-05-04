@@ -4,7 +4,7 @@ Steps can be given names for clearer resume prompts and verbose output.
 
 ```powershell
 New-Step 'Download Files' {
-    # positional — preferred
+    # positional (preferred)
     Write-Host "Step: $($Stepper.StepName), number: $($Stepper.StepNumber)"
 }
 
@@ -14,7 +14,7 @@ New-Step -Name 'Process Data' {
 }
 
 New-Step {
-    # unnamed — backward-compatible, always works
+    # unnamed (backward-compatible, always works)
     Write-Host "No name, no problem."
 }
 ```
@@ -33,7 +33,7 @@ New-Step {
 
 Available inside every block:
 
-- `$Stepper.StepName` — the name passed to `New-Step`, or `$null` if unnamed
-- `$Stepper.StepNumber` — 1-based index of the current step
+- `$Stepper.StepName`: the name passed to `New-Step`, or `$null` if unnamed
+- `$Stepper.StepNumber`: 1-based index of the current step
 
 Both values are persisted to the state file as `LastCompletedStepName` and `LastCompletedStepNumber`.

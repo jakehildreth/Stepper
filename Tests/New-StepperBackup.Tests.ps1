@@ -54,7 +54,7 @@ Describe 'New-StepperBackup' {
 
     Context 'Overwrites an existing backup at the same timestamp' {
         It 'Should overwrite without error when backup already exists' {
-            # Call twice — second call should not throw
+            # Call twice; second call should not throw
             New-StepperBackup -Path $script:OrigPath
             { New-StepperBackup -Path $script:OrigPath } | Should -Not -Throw
         }

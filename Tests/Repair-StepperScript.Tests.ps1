@@ -24,7 +24,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
             # Arrange
             $path = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
             try {
-                # Act / Assert — should not throw ParameterNotFound
+                # Act / Assert; should not throw ParameterNotFound
                 { Repair-StepperScript -Path $path } | Should -Not -Throw
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
@@ -51,7 +51,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
         }
 
         It 'Should return the post-fix Test-StepperScript result' {
-            # Arrange — script is missing CmdletBinding
+            # Arrange; script is missing CmdletBinding
             $path = New-TempScript @(
                 'param()'
                 'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
@@ -61,7 +61,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
             try {
                 # Act
                 $result = Repair-StepperScript -ScriptPath $path
-                # Assert — after repair, MissingCmdletBinding should be gone
+                # Assert; after repair, MissingCmdletBinding should be gone
                 $codes = $result.Issues | Select-Object -ExpandProperty Code
                 $codes | Should -Not -Contain 'MissingCmdletBinding'
             }
@@ -144,7 +144,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
                 # Act
                 $result = Repair-StepperScript -ScriptPath $path
                 $after  = Get-Content -Path $path -Raw
-                # Assert — file should not have Stop-Stepper injected by Repair
+                # Assert; file should not have Stop-Stepper injected by Repair
                 $after | Should -Not -Match 'Stop-Stepper'
                 # but the issue should still be in the result
                 $codes = $result.Issues | Select-Object -ExpandProperty Code
@@ -165,7 +165,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
                 # Act
                 $result = Repair-StepperScript -ScriptPath $path
                 $content = Get-Content -Path $path -Raw
-                # Assert — no actual New-Step { } call injected (CBH blurb may mention it)
+                # Assert; no actual New-Step { } call injected (CBH blurb may mention it)
                 $content | Should -Not -Match 'New-Step\s*\{'
                 $codes = $result.Issues | Select-Object -ExpandProperty Code
                 $codes | Should -Contain 'NoSteps'

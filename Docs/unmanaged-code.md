@@ -22,7 +22,7 @@ The following are always safe outside blocks:
 For each flagged block, Stepper prompts:
 
 ```
-[W] Wrap in New-Step (default)   [M] Mark as ignored   [D] Delete   [I] Ignore   [Q] Quit
+[W] Wrap in New-Step block (default)   [m] Mark as expected to ignore   [d] Delete this code   [i] Ignore and continue   [q] Quit
 ```
 
 ## The `#region Stepper ignore` Directive
