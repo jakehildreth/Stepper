@@ -21,8 +21,8 @@ function Find-NewStepBlocks {
 
     .OUTPUTS
         Hashtable with:
-          NewStepBlocks   — array of @{ Start; End } (0-based line indices)
-          StopStepperLine — 0-based line index of Stop-Stepper, or -1 if absent
+          NewStepBlocks: array of @{ Start; End } (0-based line indices)
+          StopStepperLine: 0-based line index of Stop-Stepper, or -1 if absent
     #>
     [CmdletBinding(DefaultParameterSetName = 'Path')]
     param(
@@ -47,7 +47,7 @@ function Find-NewStepBlocks {
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($ScriptContent, [ref]$tokens, [ref]$errors)
     }
 
-    # Find all New-Step command calls — AST correctly ignores occurrences inside strings/comments
+    # Find all New-Step command calls. AST correctly ignores occurrences inside strings/comments
     $newStepCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
         $args[0].GetCommandName() -eq 'New-Step'
@@ -61,7 +61,7 @@ function Find-NewStepBlocks {
         }
     }
 
-    # Find Stop-Stepper — take the first occurrence
+    # Find Stop-Stepper, take the first occurrence
     $stopCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
         $args[0].GetCommandName() -eq 'Stop-Stepper'

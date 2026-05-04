@@ -7,14 +7,14 @@ function Repair-StepperScript {
         Calls Test-StepperScript internally to discover issues, then applies fixes for
         Error-severity and fixable Warning-severity issues:
 
-          MissingCmdletBinding  — inserts [CmdletBinding()] param() block
-          MissingInstallGuard   — inserts Install-Module Stepper guard after param()
-          MissingCbh            — delegates to Add-StepperCbh (silent)
+          MissingCmdletBinding  : inserts [CmdletBinding()] param() block
+          MissingInstallGuard   : inserts Install-Module Stepper guard after param()
+          MissingCbh            : delegates to Add-StepperCbh (silent)
 
         The following issues are reported via Write-Warning but NOT automatically fixed:
 
-          MissingStopStepper    — requires author decision on placement
-          NoSteps               — empty script structure is intentional or in-progress
+          MissingStopStepper    : requires author decision on placement
+          NoSteps               : empty script structure is intentional or in-progress
 
         Returns the post-fix result of Test-StepperScript. If no changes were needed,
         the script file is not touched.
@@ -25,7 +25,7 @@ function Repair-StepperScript {
         Absolute path to the PowerShell script file to repair.
 
     .OUTPUTS
-        PSCustomObject — the result of Test-StepperScript after repairs are applied.
+        PSCustomObject: the result of Test-StepperScript after repairs are applied.
                          Shape: { Path, IsValid, Issues[] }
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
@@ -100,7 +100,7 @@ function Repair-StepperScript {
                     $newLines += $scriptLines[$i]
                 }
             } else {
-                # [CmdletBinding()] exists but guard is missing — insert after param() block
+                # [CmdletBinding()] exists but guard is missing; insert after param() block
                 $guardInsertIndex = if ($parsedAst.Ast.ParamBlock) {
                     $parsedAst.Ast.ParamBlock.Extent.EndLineNumber
                 } else {

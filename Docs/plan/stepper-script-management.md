@@ -10,18 +10,18 @@
 
 Add four public functions and two private helpers to improve the Stepper user experience:
 
-1. `Test-StepperScript` — validate a script's Stepper compatibility, return structured results
-2. `Repair-StepperScript` — fix issues found by Test-StepperScript, replace first-run repair hook
-3. `Convert-StepperScript` — migrate plain variables to `$Stepper.<var>` via interactive AST-driven rewrite
-4. `New-StepperScript` — create a new script pre-wired for Stepper use
-5. (Private) `Find-CrossStepVariables` — AST analysis supporting Convert-StepperScript
-6. (Private) `Add-StepperCbh` — CBH injection/augmentation supporting Repair-StepperScript
+1. `Test-StepperScript` : validate a script's Stepper compatibility, return structured results
+2. `Repair-StepperScript` : fix issues found by Test-StepperScript, replace first-run repair hook
+3. `Convert-StepperScript` : migrate plain variables to `$Stepper.<var>` via interactive AST-driven rewrite
+4. `New-StepperScript` : create a new script pre-wired for Stepper use
+5. (Private) `Find-CrossStepVariables` : AST analysis supporting Convert-StepperScript
+6. (Private) `Add-StepperCbh` : CBH injection/augmentation supporting Repair-StepperScript
 
 Refactor `New-Step` first-run behavior to call `Repair-StepperScript` directly.
 
 ---
 
-## Phase 1 — Private helpers
+## Phase 1: Private helpers
 
 ### `Private/Find-CrossStepVariables.ps1`
 
@@ -47,12 +47,12 @@ Inspects a script's AST for comment-based help via `ScriptBlockAst.GetHelpConten
 - If no CBH exists: inserts a full CBH block with `.SYNOPSIS`, `.DESCRIPTION`, `.NOTES`
 - If CBH exists but has no `.NOTES`: appends `.NOTES` section with Stepper usage blurb
 - If `.NOTES` exists: appends Stepper usage blurb to the existing `.NOTES`
-- Silent (no Write-Host, no user prompt) — consistent with CmdletBinding injection
+- Silent (no Write-Host, no user prompt); consistent with CmdletBinding injection
 - Returns `$true` if the script was modified, `$false` otherwise
 
 ---
 
-## Phase 2 — `Test-StepperScript`
+## Phase 2: `Test-StepperScript`
 
 **File:** `Public/Test-StepperScript.ps1`
 
@@ -97,7 +97,7 @@ Each issue:
 
 ---
 
-## Phase 3 — `Repair-StepperScript`
+## Phase 3: `Repair-StepperScript`
 
 **File:** `Public/Repair-StepperScript.ps1`
 
@@ -118,7 +118,7 @@ Returns the `Test-StepperScript` result object (post-fix state).
 
 ---
 
-## Phase 4 — `New-Step` first-run refactor
+## Phase 4: `New-Step` first-run refactor
 
 **File:** `Public/New-Step.ps1`
 
@@ -128,7 +128,7 @@ No user-visible behavior change.
 
 ---
 
-## Phase 5 — `Convert-StepperScript`
+## Phase 5: `Convert-StepperScript`
 
 **File:** `Public/Convert-StepperScript.ps1`
 
@@ -156,7 +156,7 @@ Common:
 4. Present each candidate interactively (y/n/all/quit style)
 5. Collect confirmed variable names
 6. AST-walk: collect ALL `VariableExpressionAst` occurrences of each selected var
-   that are INSIDE any `New-Step` scriptblock body — collect `Extent.StartOffset` and `Extent.EndOffset`
+   that are INSIDE any `New-Step` scriptblock body, collect `Extent.StartOffset` and `Extent.EndOffset`
 7. Sort occurrences by `StartOffset` descending (back-to-front rewrite preserves offsets)
 8. Rewrite script text: replace `$varname` with `$Stepper.Varname`
 9. Write output (in-place + .bak, or -OutputPath)
@@ -169,7 +169,7 @@ Does NOT rename occurrences outside step blocks (e.g. script-level code, param b
 
 ---
 
-## Phase 6 — `New-StepperScript`
+## Phase 6: `New-StepperScript`
 
 **File:** `Public/New-StepperScript.ps1`
 
@@ -190,7 +190,7 @@ Common:
 
 ### Output
 
-`[System.IO.FileInfo]` — the created file, for pipeline use.
+`[System.IO.FileInfo]`: the created file, for pipeline use.
 
 ### Templates
 
@@ -232,5 +232,5 @@ Regression gate: full existing suite must pass after Phase 4 refactor.
 - `Tests/New-StepperScript.Tests.ps1`
 
 ### Modified
-- `Public/New-Step.ps1` — first-run hook calls `Repair-StepperScript`
-- `Private/Test-StepperScriptRequirements.ps1` — deleted (private, no external callers)
+- `Public/New-Step.ps1`: first-run hook calls `Repair-StepperScript`
+- `Private/Test-StepperScriptRequirements.ps1`: deleted (private, no external callers)

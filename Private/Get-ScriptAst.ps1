@@ -18,9 +18,9 @@ function Get-ScriptAst {
 
     .OUTPUTS
         PSCustomObject with properties:
-          Ast    — [System.Management.Automation.Language.ScriptBlockAst]
-          Tokens — [System.Management.Automation.Language.Token[]]
-          Errors — [System.Management.Automation.Language.ParseError[]]
+          Ast: [System.Management.Automation.Language.ScriptBlockAst]
+          Tokens: [System.Management.Automation.Language.Token[]]
+          Errors: [System.Management.Automation.Language.ParseError[]]
 
     .NOTES
         Line number convention: AST Extent properties (StartLineNumber, EndLineNumber) are 1-based.

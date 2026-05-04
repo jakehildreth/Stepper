@@ -9,11 +9,11 @@ function Test-StepperScript {
 
         Issue codes and their severities:
 
-          MissingCmdletBinding  (Error)   — [CmdletBinding()] not present
-          MissingInstallGuard   (Error)   — Install-Module Stepper guard absent
-          MissingCbh            (Warning) — No comment-based help block
-          MissingStopStepper    (Warning) — Stop-Stepper not called
-          NoSteps               (Warning) — No New-Step blocks found
+          MissingCmdletBinding  (Error)   : [CmdletBinding()] not present
+          MissingInstallGuard   (Error)   : Install-Module Stepper guard absent
+          MissingCbh            (Warning) : No comment-based help block
+          MissingStopStepper    (Warning) : Stop-Stepper not called
+          NoSteps               (Warning) : No New-Step blocks found
 
         IsValid is $true when no Error-severity issues are present (warnings are
         informational and do not affect overall validity).
@@ -23,9 +23,9 @@ function Test-StepperScript {
 
     .OUTPUTS
         PSCustomObject with properties:
-          Path     — Resolved path to the script
-          IsValid  — $true when no Error-severity issues exist
-          Issues   — Array of PSCustomObjects with Code, Severity, Message
+          Path     : Resolved path to the script
+          IsValid  : $true when no Error-severity issues exist
+          Issues   : Array of PSCustomObjects with Code, Severity, Message
     #>
     [CmdletBinding()]
     param(

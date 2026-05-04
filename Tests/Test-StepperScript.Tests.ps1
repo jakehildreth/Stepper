@@ -76,7 +76,7 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             # Arrange
             $path = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
             try {
-                # Act / Assert — should not throw ParameterNotFound
+                # Act / Assert; should not throw ParameterNotFound
                 { Test-StepperScript -Path $path } | Should -Not -Throw
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }

@@ -1,12 +1,13 @@
 # How It Works
 
-## First Run — Script Validation
+## First Run Script Validation
 
 Before executing any steps, Stepper validates the script:
 
-1. Checks for `[CmdletBinding()]` and the self-install guard independently — each is silently injected if missing. The guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings on the next run. No prompt, no `#Requires` statement added.
-2. Scans for unmanaged code between `New-Step` blocks — prompts per block: Wrap / Mark / Delete / Ignore
+1. Checks for `[CmdletBinding()]` and the self-install guard independently. Each component is silently injected if missing. The guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings on the next run. No prompt, no `#Requires` statement added.
+2. Scans for unmanaged code between `New-Step` blocks then prompts per block: Wrap / Mark / Delete / Ignore
 3. Checks that `Stop-Stepper` appears at the end
+4. If the `$StepperConversionComplete` sentinel is absent, invokes `ConvertTo-StepperScript` to detect and migrate cross-step variables to `$Stepper.<Var>` notation. On completion, ConvertTo injects `$StepperConversionComplete = $true` inside `#region Stepper ignore`. The hook is skipped on all subsequent runs.
 
 If the script is modified by any of the above, Stepper writes the changes and asks you to re-run.
 
@@ -16,22 +17,22 @@ If the script is modified by any of the above, Stepper writes the changes and as
 - After each step succeeds, state is serialized to a `.stepper` file (XML via `Export-Clixml`) in the same directory as the script
 - State includes: SHA256 hash, full script contents, last completed step, step name/number, timestamp (ISO 8601), and the full `$Stepper` hashtable
 
-## Resume — Script Unchanged
+## Resume, Script Unchanged
 
 On the next run, Stepper finds the `.stepper` file, computes the current SHA256, and if it matches prompts:
 
 ```
-[R] Resume (default)   [S] Start over   [M] More details   [Q] Quit
+[R] Resume (default)   [s] Start over   [m] More details   [q] Quit
 ```
 
 Resume mode skips all steps up to and including `LastCompletedStep` and continues from the next one.
 
-## Resume — Script Modified
+## Resume, Script Modified
 
 If the hash doesn't match, Stepper warns about the inconsistency and prompts:
 
 ```
-[R] Resume (risky)   [S] Start over   [M] More details   [Q] Quit
+[r] Resume (risky)   [S] Start over (default)   [m] More details   [q] Quit
 ```
 
 Start over removes the state file and runs fresh.
@@ -57,8 +58,9 @@ When `Read-Host` is unavailable (CI/CD, remoting, unattended runs), Stepper fall
 |---|---|
 | Missing `[CmdletBinding()]` | Silent auto-inject (always; no prompt) |
 | Unmanaged code | Wrap |
-| Resume — script unchanged | Resume |
-| Resume — script modified | Start over |
+| Resume, script unchanged | Resume |
+| Resume, script modified | Start over |
+| Cross-step variable conversion | Convert all |
 
 ## Verbose Output
 

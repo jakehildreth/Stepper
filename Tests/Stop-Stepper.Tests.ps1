@@ -9,7 +9,7 @@ BeforeAll {
 
     # On macOS, $TestDrive resolves to /private/tmp/… which matches the
     # */Private/*.ps1 path filter in Stop-Stepper (case-insensitive -like).
-    # Use the test file's own path as the fake "user script" ScriptName — it
+    # Use the test file's own path as the fake "user script" ScriptName, it
     # lives in Tests/ and will never match Private/, Public/, or Stepper.psm1.
     $script:FakeUserScript = Join-Path $PSScriptRoot 'Stop-Stepper.Tests.ps1'
     $script:FakeStatePath  = Get-StepperStatePath -ScriptPath $script:FakeUserScript
@@ -146,7 +146,7 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
             Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc' `
                 -LastCompletedStep "${script:FakeUserScript}:1"
 
-            # Return only module frames — forces fallback to __StepperExecutionState
+            # Return only module frames; forces fallback to __StepperExecutionState
             $sep = [System.IO.Path]::DirectorySeparatorChar
             $modulePath = $ModulePath
             $frames = @(
@@ -206,7 +206,7 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — summary entry written on completion' {
+    Context 'Logging: summary entry written on completion' {
         BeforeEach {
             Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
                 -LastCompletedStep "${script:FakeUserScript}:1"
@@ -243,7 +243,7 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
     }
 
-    Context 'Logging — reads LogPath from execution state' {
+    Context 'Logging: reads LogPath from execution state' {
         BeforeEach {
             Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
                 -LastCompletedStep "${script:FakeUserScript}:1"

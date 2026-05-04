@@ -167,7 +167,7 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             try {
                 ConvertTo-StepperScript -Path $path -Force
                 $result = Get-Content -Path $path -Raw
-                # $servers is a cross-step candidate — all uses must be rewritten
+                # $servers is a cross-step candidate; all uses must be rewritten
                 $result | Should -Not -Match '(?<!\.)(\$servers)\b'
                 $result | Should -Match '\$Stepper\.Servers'
             }

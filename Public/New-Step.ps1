@@ -63,7 +63,7 @@ function New-Step {
 
     .EXAMPLE
         New-Step {
-            Write-Host "Unnamed step — backward-compatible syntax."
+            Write-Host "Unnamed step. Backward-compatible syntax."
         }
 
     .NOTES
@@ -392,7 +392,7 @@ function New-Step {
             if ($conversionCandidates.Count -gt 0) {
                 ConvertTo-StepperScript -Path $scriptPath
                 if (Test-StepperConversionComplete -ScriptPath $scriptPath) {
-                    # Script was rewritten — tell user what happened and exit
+                    # Script was rewritten; tell user what happened and exit
                     $scriptName = Split-Path $scriptPath -Leaf
                     Write-Host ""
                     Write-Host "Cross-step variables have been converted to `$Stepper.<Var> notation and `$StepperConversionComplete = `$true has been added to $scriptName." -ForegroundColor Green
@@ -404,14 +404,14 @@ function New-Step {
 
         $existingState = Read-StepperState -StatePath $statePath
 
-        #Region Log config — resolve on fresh run, restore on resume
+        #Region Log config: resolve on fresh run, restore on resume
         if ($existingState -and $existingState.LogPath) {
-            # Resumed run — restore log config from state, no prompts
+            # Resumed run: restore log config from state, no prompts
             $executionState.LogPath        = $existingState.LogPath
             $executionState.LoggingEnabled = $existingState.LoggingEnabled
             $executionState.NoLogStepIds   = if ($existingState.NoLogStepIds) { @($existingState.NoLogStepIds) } else { @() }
         } else {
-            # Fresh run — scan AST and resolve
+            # Fresh run: scan AST and resolve
             $logConfig  = Get-StepLogConfig -ScriptPath $scriptPath
             $scriptDir  = Split-Path -Path $scriptPath -Parent
             $scriptName = Split-Path -Path $scriptPath -Leaf
@@ -473,7 +473,7 @@ function New-Step {
                 Write-Host ""
                 Write-Host "[i] Some steps have -NoLog specified: $noLogList" -ForegroundColor Cyan
                 Write-Host ""
-                Write-Host "  [A] Log all steps — ignore -NoLog flags (Default)" -ForegroundColor Cyan
+                Write-Host "  [A] Log all steps, ignore -NoLog flags (Default)" -ForegroundColor Cyan
                 Write-Host "  [s] Skip logging for those steps only" -ForegroundColor White
                 Write-Host "  [d] Disable logging entirely" -ForegroundColor White
                 Write-Host "  [q] Quit" -ForegroundColor White
@@ -501,7 +501,7 @@ function New-Step {
                         exit
                     }
                     default {
-                        # 'a' or anything else — log everything
+                        # 'a' or anything else: log everything
                     }
                 }
             }
@@ -526,7 +526,7 @@ function New-Step {
         if ($existingState) {
             # Check if script has been modified
             if ($existingState.ScriptHash -ne $currentHash) {
-                # Script has been modified since last run — prompt user for action
+                # Script has been modified since last run; prompt user for action
                 $inventory = Get-StepInventory -ScriptPath $scriptPath
                 $stepLines  = $inventory.StepLines
                 $stepNames  = $inventory.StepNames

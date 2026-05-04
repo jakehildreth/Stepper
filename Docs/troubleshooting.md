@@ -26,4 +26,4 @@ A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an
 
 **`Read-Host` prompts and responses don't appear in the log file**
 
-`Start-Transcript` on macOS/Linux (PS Core) does not capture `Read-Host` input. This is a platform limitation — all other output (`Write-Host`, pipeline, etc.) is captured normally. On Windows the behavior is the same in both PS 5.1 and PS 7.
+`Start-Transcript` on macOS/Linux (PS Core) does not capture `Read-Host` input. This is a platform limitation; all other output (`Write-Host`, pipeline, etc.) is captured normally. On Windows the behavior is the same in both PS 5.1 and PS 7.

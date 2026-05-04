@@ -11,8 +11,8 @@
 `Repair-StepperScript` (and the first-run hook in `New-Step`) detects whether a user's script has comment-based help (CBH). If CBH is absent, Stepper can inject a skeleton block automatically.
 
 Two injection styles were considered:
-1. **Silent** — inject without prompting; emit one `Write-Verbose` call; continue execution
-2. **Interactive** — print a notice, call `exit`, require user to re-run (same pattern as `MissingCmdletBinding` in the old `Test-StepperScriptRequirements`)
+1. **Silent**: inject without prompting; emit one `Write-Verbose` call; continue execution
+2. **Interactive**: print a notice, call `exit`, require user to re-run (same pattern as `MissingCmdletBinding` in the old `Test-StepperScriptRequirements`)
 
 The `[CmdletBinding()]` and install-guard injections are already silent as of ADR 0003. CBH injection modifies the script in the same category of "structural improvement" as those two, and carries no functional risk (CBH is inert at runtime).
 
@@ -30,7 +30,7 @@ CBH injection is silent. No `Write-Host`, no `exit`, no user prompt. Consistent 
 
 - CBH is documentation-only; its absence or presence does not affect script execution
 - Interrupting execution for a non-functional change violates the principle of least surprise
-- Consistency with existing silent injections (ADR 0003) — users learn one mental model
+- Consistency with existing silent injections (ADR 0003); users learn one mental model
 - Verbose output is still emitted, so `-Verbose` users see what happened
 
 ---

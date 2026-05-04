@@ -14,7 +14,7 @@ Three categories of fragility were identified:
 
 1. **Structural detection:** `New-Step` regex requires `{` on the same line as the call, breaking if the scriptblock is on the next line. Manual brace-counting to find block end does not account for `{`/`}` inside strings or heredocs.
 2. **Comment span detection:** `<#` / `#>` are matched line-by-line, which breaks if either token appears after executable code on the same line.
-3. **Executable-line classification:** A 5-pattern regex whitelist (`[CmdletBinding(`, `param(`, `using`, etc.) is used to skip "non-executable" lines. Incomplete by construction — any pattern not in the list is a false positive.
+3. **Executable-line classification:** A 5-pattern regex whitelist (`[CmdletBinding(`, `param(`, `using`, etc.) is used to skip "non-executable" lines. Incomplete by construction; any pattern not in the list is a false positive.
 
 Additionally, the step-counting + name-listing logic is copy-pasted verbatim 3 times in `New-Step.ps1` (lines 349–371, 501–529, 713–740), and the script file is read from disk 2–3 times per `New-Step` execution.
 
@@ -27,7 +27,7 @@ Replace all structural regex with `[System.Management.Automation.Language.Parser
 Introduce a new private function `Get-ScriptAst` that:
 - Calls `[Parser]::ParseFile()`, returning `[PSCustomObject]@{ Ast; Tokens; Errors }`
 - Emits `Write-Warning` per parse error and returns the partial AST (callers decide whether to abort)
-- Maintains a module-scoped `$script:astCache` hashtable keyed on `"$ScriptPath:$hash"` (using the existing `Get-ScriptHash` function) — auto-invalidates when the script changes, eliminates redundant disk reads
+- Maintains a module-scoped `$script:astCache` hashtable keyed on `"$ScriptPath:$hash"` (using the existing `Get-ScriptHash` function); auto-invalidates when the script changes, eliminates redundant disk reads
 
 ---
 
@@ -39,14 +39,14 @@ The PowerShell AST is syntax-aware. It correctly handles:
 - `New-Step` and `Stop-Stepper` appearing inside comments (they simply won't produce `CommandAst` nodes)
 - All PS quoting rules by construction
 
-The alternative — keeping regex but fixing edge cases — is a local patch on a structural problem. Every edge case fixed reveals the next one.
+The alternative (keeping regex but fixing edge cases) is a local patch on a structural problem. Every edge case fixed reveals the next one.
 
 ---
 
 ## Consequences
 
 - `Get-ScriptAst.ps1` added to `Private/`
-- `Get-StepInventory.ps1` added to `Private/` — encapsulates the deduplicated step-counting logic
+- `Get-StepInventory.ps1` added to `Private/`: encapsulates the deduplicated step-counting logic
 - `Find-NewStepBlocks.ps1` signature changes from `[object[]]$ScriptLines` to `[string]$ScriptPath`; brace-counting loop replaced with `$ast.FindAll(...)` + `Extent` properties
 - `Find-UnmanagedCodeBlocks.ps1` comment detection replaced with token stream inspection; executable-line classification replaced with AST extent check
 - `Test-StepperScriptRequirements.ps1` uses `$ast.ParamBlock.Attributes` and `$ast.ScriptRequirements.RequiredModules` instead of regex
@@ -58,6 +58,6 @@ The alternative — keeping regex but fixing edge cases — is a local patch on 
 
 ## Rejected alternative
 
-**Direct `[Parser]::ParseFile()` calls per function** — each function would handle its own `[ref]` vars and error handling. Rejected because:
+**Direct `[Parser]::ParseFile()` calls per function**: each function would handle its own `[ref]` vars and error handling. Rejected because:
 - Error handling (`Write-Warning` per parse error) would be copy-pasted into 4–5 functions and drift over time
-- The re-parsing problem (2–3 disk reads per execution) stays unfixed — caching can only be centralized in a wrapper
+- The re-parsing problem (2–3 disk reads per execution) stays unfixed; caching can only be centralized in a wrapper

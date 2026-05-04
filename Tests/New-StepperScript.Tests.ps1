@@ -200,7 +200,7 @@ Describe 'New-StepperScript' -Tag 'Unit' {
                 # Act
                 New-StepperScript -Path $path | Out-Null
                 $content = Get-Content -Path $path -Raw
-                # Assert — showcase-only content should not appear in minimal
+                # Assert; showcase-only content should not appear in minimal
                 $content | Should -Not -Match '\$Stepper\.'
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
