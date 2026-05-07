@@ -284,18 +284,25 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
     }
 
     Context 'Sentinel injection ($StepperConversionComplete)' {
-        It 'Should inject $StepperConversionComplete = $true before the first New-Step when no ignore region exists' {
+        It 'Should inject install guard + sentinel after param() when no ignore region exists' {
             $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
             try {
                 ConvertTo-StepperScript -Path $path -Force
                 $result = Get-Content -Path $path -Raw
                 $result | Should -Match '\$StepperConversionComplete\s*=\s*\$true'
-                # sentinel must appear BEFORE the first New-Step
-                $sentinelIndex = $result.IndexOf('$StepperConversionComplete')
+                # install guard must also be present
+                $result | Should -Match 'Install-Module Stepper'
+                # sentinel must be inside the region (before #endregion)
+                $sentinelIndex  = $result.IndexOf('$StepperConversionComplete')
+                $endRegionIndex = $result.IndexOf('#endregion Stepper ignore')
+                $sentinelIndex | Should -BeLessThan $endRegionIndex
+                # sentinel must appear after param() and before New-Step
+                $paramIndex    = $result.IndexOf('param()')
                 $newStepIndex  = $result.IndexOf('New-Step')
+                $sentinelIndex | Should -BeGreaterThan $paramIndex
                 $sentinelIndex | Should -BeLessThan $newStepIndex
-                # should be wrapped in a region
-                $result | Should -Match '#region Stepper ignore'
+                # only one region block should exist
+                ([regex]::Matches($result, '#region Stepper ignore')).Count | Should -Be 1
             }
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue

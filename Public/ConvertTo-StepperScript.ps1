@@ -247,25 +247,27 @@ function ConvertTo-StepperScript {
             '$StepperConversionComplete = $true' + $nl +
             $content.Substring($endRegionIndex)
     } else {
-        # No existing ignore region; create a new one before the first New-Step call
+        # No existing ignore region; create install guard + sentinel after param() block
         $sentinelAst = [System.Management.Automation.Language.Parser]::ParseInput(
             $content, [ref]$null, [ref]$null
         )
-        $firstNewStep = @($sentinelAst.FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.CommandAst] -and
-            $node.GetCommandName() -eq 'New-Step'
-        }, $true) | Sort-Object { $_.Extent.StartLineNumber }) | Select-Object -First 1
 
-        if ($firstNewStep) {
-            $insertOffset = $firstNewStep.Extent.StartOffset
-            $sentinel = '#region Stepper ignore' + $nl +
-                        '$StepperConversionComplete = $true' + $nl +
-                        '#endregion Stepper ignore' + $nl
-            $content = $content.Substring(0, $insertOffset) +
-                $sentinel +
-                $content.Substring($insertOffset)
+        $insertOffset = if ($sentinelAst.ParamBlock) {
+            $sentinelAst.ParamBlock.Extent.EndOffset
+        } else {
+            # No param block; insert before the first top-level statement
+            $firstStatement = @($sentinelAst.EndBlock.Statements) | Select-Object -First 1
+            if ($firstStatement) { $firstStatement.Extent.StartOffset } else { $content.Length }
         }
+
+        $installGuard = $nl +
+            '#region Stepper ignore' + $nl +
+            "if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }" + $nl +
+            '$StepperConversionComplete = $true' + $nl +
+            '#endregion Stepper ignore' + $nl
+        $content = $content.Substring(0, $insertOffset) +
+            $installGuard +
+            $content.Substring($insertOffset)
     }
 
     if ($OutputPath) {
