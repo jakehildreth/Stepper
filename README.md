@@ -6,6 +6,7 @@ A cross-platform PowerShell utility module for creating resumable, step-by-step 
 
 ![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jakehildreth/Stepper)
 [![PSGallery](https://img.shields.io/powershellgallery/v/Stepper)](https://www.powershellgallery.com/packages/Stepper)
 ![License](https://img.shields.io/badge/license-MIT%20w%2FCommons%20Clause-green)
 
