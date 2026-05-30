@@ -367,4 +367,38 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
     }
+
+    Context 'Path resolution' {
+        It 'Should accept a relative path (./script.ps1)' {
+            # Arrange - use a script with no cross-step candidates so no modification occurs
+            $path = New-TempScript ($NoCanidatesScript -split [System.Environment]::NewLine)
+            $dir  = Split-Path -Parent $path
+            $file = Split-Path -Leaf $path
+            Push-Location $dir
+            try {
+                # Act / Assert - should not throw
+                { ConvertTo-StepperScript -Path "./$file" } | Should -Not -Throw
+            }
+            finally {
+                Pop-Location
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-TempBaks $path
+            }
+        }
+
+        It 'Should accept a tilde path (~/script.ps1)' {
+            # Arrange
+            $fileName = "StepperPathTest_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8)).ps1"
+            $absPath  = Join-Path $HOME $fileName
+            $NoCanidatesScript | Set-Content -Path $absPath -Encoding UTF8 -NoNewline
+            try {
+                # Act / Assert - should not throw
+                { ConvertTo-StepperScript -Path "~/$fileName" } | Should -Not -Throw
+            }
+            finally {
+                Remove-Item $absPath -ErrorAction SilentlyContinue
+                Remove-TempBaks $absPath
+            }
+        }
+    }
 }

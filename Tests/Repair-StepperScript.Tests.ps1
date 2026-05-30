@@ -224,4 +224,52 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
     }
+
+    Context 'Path resolution' {
+        It 'Should accept a relative path (./script.ps1)' {
+            # Arrange
+            $path = New-TempScript @(
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'New-Step { Write-Host "step 1" }'
+                'Stop-Stepper'
+            )
+            $dir  = Split-Path -Parent $path
+            $file = Split-Path -Leaf $path
+            Push-Location $dir
+            try {
+                # Act
+                $result = Repair-StepperScript -ScriptPath "./$file"
+                # Assert - IsValid should be true; broken AST would cause false MissingCmdletBinding
+                $result.IsValid | Should -BeTrue
+            }
+            finally {
+                Pop-Location
+                Remove-Item $path -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should accept a tilde path (~/script.ps1)' {
+            # Arrange
+            $fileName = "StepperPathTest_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8)).ps1"
+            $absPath  = Join-Path $HOME $fileName
+            @(
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'New-Step { Write-Host "step 1" }'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine | Set-Content -Path $absPath -Encoding UTF8 -NoNewline
+            try {
+                # Act
+                $result = Repair-StepperScript -ScriptPath "~/$fileName"
+                # Assert - IsValid should be true; broken AST would cause false MissingCmdletBinding
+                $result.IsValid | Should -BeTrue
+            }
+            finally {
+                Remove-Item $absPath -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }

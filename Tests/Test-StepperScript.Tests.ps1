@@ -385,4 +385,40 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
     }
+
+    Context 'Path resolution' {
+        It 'Should accept a relative path (./script.ps1)' {
+            # Arrange
+            $path = New-TempScript ($ValidScript -split [System.Environment]::NewLine)
+            $dir  = Split-Path -Parent $path
+            $file = Split-Path -Leaf $path
+            Push-Location $dir
+            try {
+                # Act
+                $result = Test-StepperScript -ScriptPath "./$file"
+                # Assert
+                $result.IsValid | Should -BeTrue
+            }
+            finally {
+                Pop-Location
+                Remove-Item $path -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should accept a tilde path (~/script.ps1)' {
+            # Arrange
+            $fileName = "StepperPathTest_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8)).ps1"
+            $absPath  = Join-Path $HOME $fileName
+            $ValidScript | Set-Content -Path $absPath -Encoding UTF8 -NoNewline
+            try {
+                # Act
+                $result = Test-StepperScript -ScriptPath "~/$fileName"
+                # Assert
+                $result.IsValid | Should -BeTrue
+            }
+            finally {
+                Remove-Item $absPath -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
