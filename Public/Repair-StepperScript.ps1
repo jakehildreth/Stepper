@@ -36,6 +36,8 @@ function Repair-StepperScript {
         [string]$ScriptPath
     )
 
+    $ScriptPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ScriptPath)
+
     $initialResult = Test-StepperScript -ScriptPath $ScriptPath
 
     $needsFix = $initialResult.Issues | Where-Object {

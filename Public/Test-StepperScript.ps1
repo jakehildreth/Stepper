@@ -35,6 +35,8 @@ function Test-StepperScript {
         [string]$ScriptPath
     )
 
+    $ScriptPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ScriptPath)
+
     $issues = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # Read script content

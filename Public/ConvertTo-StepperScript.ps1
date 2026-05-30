@@ -62,7 +62,7 @@ function ConvertTo-StepperScript {
         $scriptName = if ($Name -match '\.ps1$') { $Name } else { "$Name.ps1" }
         $resolvedPath = Join-Path $Directory $scriptName
     } else {
-        $resolvedPath = $Path
+        $resolvedPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
 
     if (-not (Test-Path -LiteralPath $resolvedPath)) {
