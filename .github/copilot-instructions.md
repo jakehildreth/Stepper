@@ -43,6 +43,5 @@ feat(detection): add ESC6 detection for CA EDITF_ATTRIBUTESUBJECTALTNAME2 flag
 ```
 
 - Keep commits atomic and focused
-- Update CHANGELOG.MD for user-facing changes
 - Be specific about what changed and why
 
