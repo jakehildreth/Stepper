@@ -7,6 +7,7 @@ BeforeAll {
     . "$ModulePath/Private/Write-StepperState.ps1"
     . "$ModulePath/Private/Read-StepperState.ps1"
     . "$ModulePath/Private/Remove-StepperState.ps1"
+    . "$ModulePath/Private/Clear-StepperSession.ps1"
     . "$ModulePath/Private/Test-LineInIgnoredRegion.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Get-StepInventory.ps1"
@@ -366,6 +367,62 @@ Describe 'New-Step' -Tag 'Integration' {
             $sideEffect = Join-Path $TestDrive "changed-side-$(New-Guid).txt"
             New-Step { Set-Content -Path $sideEffect -Value 'ran' }
             $sideEffect | Should -Exist
+        }
+    }
+
+    Context 'Pristine Start Over' {
+        BeforeEach {
+            Remove-Variable -Name 'Stepper' -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
+        }
+
+        It 'Start Over does not reuse data from previous runs' {
+            $info = New-TestStepperScript -BaseName "pristine-$(New-Guid)" -StepCount 2
+            $step1Id = "$($info.Path):$($info.FirstStepLine)"
+            $step2Id = "$($info.Path):$($info.FirstStepLine + 1)"
+            Write-StepperState -StatePath $info.StatePath `
+                -ScriptHash (Get-ScriptHash -ScriptPath $info.Path) `
+                -LastCompletedStep $step1Id `
+                -StepNumber 1 `
+                -StepperData @{ PriorRunSecret = 'stale' } `
+                -LogPath (Join-Path $TestDrive 'old.log') `
+                -LoggingEnabled $true `
+                -NoLogStepIds @($step2Id)
+
+            # Stale session variable: same-console rerun left data behind
+            $Stepper = @{ PriorRunSecret = 'stale' }
+
+            $script:PristineCallCount = 0
+            Mock Get-StepIdentifier {
+                $script:PristineCallCount++
+                if ($script:PristineCallCount -eq 1) { $step1Id } else { $step2Id }
+            }
+            Mock Read-Host { 'S' }
+
+            New-Step { }
+
+            # The stale $Stepper was removed from the caller's scope: it is no
+            # longer visible here (the leak path is closed). New-Step recreates
+            # an empty one internally for state persistence.
+            $stepperVar = Get-Variable -Name 'Stepper' -ValueOnly -ErrorAction SilentlyContinue
+            $stepperVar | Should -BeNullOrEmpty
+
+            # Execution state is fresh, not resumed from the prior run
+            $execState = Get-Variable -Name '__StepperExecutionState' -ValueOnly
+            $execState.RestoreMode | Should -BeFalse
+            $execState.TargetStep | Should -BeNullOrEmpty
+            $execState.LogPath | Should -Not -Be (Join-Path $TestDrive 'old.log')
+            $execState.NoLogStepIds | Should -Not -Contain $step2Id
+
+            New-Step { }
+
+            # The re-persistence mechanism is dead: new state carries no prior data
+            $state = Import-Clixml -Path $info.StatePath
+            $state.LastCompletedStep | Should -Be $step2Id
+            if ($state.StepperData) {
+                $state.StepperData.Keys | Should -Not -Contain 'PriorRunSecret'
+            }
         }
     }
 

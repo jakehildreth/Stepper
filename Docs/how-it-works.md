@@ -35,7 +35,7 @@ If the hash doesn't match, Stepper warns about the inconsistency and prompts:
 [r] Resume (risky)   [S] Start over (default)   [m] More details   [q] Quit
 ```
 
-Start over removes the state file and runs fresh.
+Start over is a pristine fresh start: it removes the state file, clears the `$Stepper` variable from your session, and discards the previous run's logging choices (log path, logging on/off, and any `-NoLog` decisions), so the new run re-resolves logging from scratch. No data from the previous run carries over.
 
 ## More Details View
 

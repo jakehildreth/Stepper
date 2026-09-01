@@ -11,6 +11,10 @@ function New-Step {
         The script content is hashed to detect modifications. If the script changes
         between runs, the state is invalidated and execution starts fresh.
 
+        Choosing Start Over is pristine: the state file is deleted, $Stepper is
+        removed from the caller's scope, and the previous run's log config is
+        discarded, so the new run behaves as if no prior run happened.
+
     .PARAMETER Name
         Optional name for this step. Displayed in verbose output and resume prompts.
 
@@ -404,8 +408,9 @@ function New-Step {
 
         $existingState = Read-StepperState -StatePath $statePath
 
-        #Region Log config: resolve on fresh run, restore on resume
-        if ($existingState -and $existingState.LogPath) {
+        #Region Log config: restore only on an actual resume; resolve fresh otherwise
+        # (Start Over branches set StartFresh, so a fresh run never inherits the old log config)
+        if ($existingState -and $existingState.LogPath -and -not $executionState.StartFresh) {
             # Resumed run: restore log config from state, no prompts
             $executionState.LogPath        = $existingState.LogPath
             $executionState.LoggingEnabled = $existingState.LoggingEnabled
@@ -512,16 +517,8 @@ function New-Step {
         }
         #EndRegion Log config
 
-        # Try to load persisted $Stepper data from state
-        if ($existingState -and $existingState.StepperData) {
-            try {
-                $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
-                $variableNames = ($existingState.StepperData.Keys | Sort-Object) -join ', '
-                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk ($variableNames)"
-            } catch {
-                Write-Warning "Failed to load persisted `$Stepper data: $_"
-            }
-        }
+        # NOTE: persisted $Stepper data is NOT injected here. It is injected only
+        # when the user chooses Resume, so a Start Over run never sees it.
 
         if ($existingState) {
             # Check if script has been modified
@@ -552,6 +549,8 @@ function New-Step {
                 $lastStepDisplay = if ($existingState.LastCompletedStepName) { "$($existingState.LastCompletedStepName) (Step $($lastStepIndex + 1), Line $lastStepLine)" } else { "Step $($lastStepIndex + 1) (Line $lastStepLine)" }
 
                 while ($true) {
+                    # A previous loop iteration already chose Start Over (state file deleted)
+                    if ($executionState.StartFresh -and -not (Test-Path -LiteralPath $statePath)) { break }
                     Write-Host ""
                     Write-Host "[!] Incomplete script run detected, but $scriptName has been modified." -ForegroundColor Magenta
                     Write-Host ""
@@ -584,14 +583,19 @@ function New-Step {
 
                     if ($response -eq '' -or $response -eq 'S' -or $response -eq 's') {
                         Write-Host "Starting fresh..." -ForegroundColor Yellow
-                        Remove-StepperState -StatePath $statePath
-                        break
+                        $executionState.StartFresh = $true
+                        Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                        continue
                     }
                     elseif ($response -eq 'R' -or $response -eq 'r') {
                         Write-Host ""
                         Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                         $executionState.RestoreMode = $true
                         $executionState.TargetStep = $lastStep
+                        if ($existingState.StepperData) {
+                            $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk"
+                        }
                         break
                     }
                     elseif ($response -eq 'M' -or $response -eq 'm') {
@@ -614,14 +618,19 @@ function New-Step {
 
                         if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
                             Write-Host "Starting fresh..." -ForegroundColor Yellow
-                            Remove-StepperState -StatePath $statePath
-                            break
+                            $executionState.StartFresh = $true
+                            Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                            continue
                         }
                         elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
                             Write-Host ""
                             Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
+                            if ($existingState.StepperData) {
+                                $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk"
+                            }
                             break
                         }
                         elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
@@ -632,8 +641,9 @@ function New-Step {
                         else {
                             # Default to Start over for invalid input
                             Write-Host "Starting fresh..." -ForegroundColor Yellow
-                            Remove-StepperState -StatePath $statePath
-                            break
+                            $executionState.StartFresh = $true
+                            Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                            continue
                         }
                     }
                     elseif ($response -eq 'Q' -or $response -eq 'q') {
@@ -644,8 +654,9 @@ function New-Step {
                     else {
                         # Default to Start over for invalid input
                         Write-Host "Starting fresh..." -ForegroundColor Yellow
-                        Remove-StepperState -StatePath $statePath
-                        break
+                        $executionState.StartFresh = $true
+                        Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                        continue
                     }
                 }
             }
@@ -692,6 +703,8 @@ function New-Step {
                     $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
 
                     while ($true) {
+                        # A previous loop iteration already chose Start Over (state file deleted)
+                        if ($executionState.StartFresh -and -not (Test-Path -LiteralPath $statePath)) { break }
                         Write-Host "How would you like to proceed?"
                         Write-Host ""
                         Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
@@ -720,8 +733,9 @@ function New-Step {
                         }
                         elseif ($response -eq 'S' -or $response -eq 's') {
                             Write-Host "Starting fresh..." -ForegroundColor Yellow
-                            Remove-StepperState -StatePath $statePath
-                            break
+                            $executionState.StartFresh = $true
+                            Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                            continue
                         }
                         elseif ($response -eq 'M' -or $response -eq 'm') {
                             Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber
@@ -743,14 +757,19 @@ function New-Step {
 
                             if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
                                 Write-Host "Starting fresh..." -ForegroundColor Yellow
-                                Remove-StepperState -StatePath $statePath
-                                break
+                                $executionState.StartFresh = $true
+                                Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                                continue
                             }
                             elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
                                 Write-Host ""
                                 Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                                 $executionState.RestoreMode = $true
                                 $executionState.TargetStep = $lastStep
+                                if ($existingState.StepperData) {
+                                    $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk"
+                                }
                                 break
                             }
                             elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
@@ -761,8 +780,9 @@ function New-Step {
                             else {
                                 # Default to Start over for invalid input
                                 Write-Host "Starting fresh..." -ForegroundColor Yellow
-                                Remove-StepperState -StatePath $statePath
-                                break
+                                $executionState.StartFresh = $true
+                                Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                                continue
                             }
                         }
                         elseif ($response -eq 'Q' -or $response -eq 'q') {
@@ -776,12 +796,18 @@ function New-Step {
                             Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
                             $executionState.RestoreMode = $true
                             $executionState.TargetStep = $lastStep
+                            if ($existingState.StepperData) {
+                                $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk"
+                            }
                             break
                         }
                     }
                 } else {
                     Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow
-                    Remove-StepperState -StatePath $statePath
+                    $executionState.StartFresh = $true
+                    Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+                    continue
                 }
                 Write-Host ""
             }
