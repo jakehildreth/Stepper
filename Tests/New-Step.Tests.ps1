@@ -400,7 +400,8 @@ Describe 'New-Step' -Tag 'Integration' {
             }
             Mock Read-Host { 'S' }
 
-            New-Step { }
+            $step1Ran = Join-Path $TestDrive "pristine-step1-$(New-Guid).txt"
+            New-Step { Set-Content -Path $step1Ran -Value 'ran' }
 
             # The stale $Stepper was removed from the caller's scope: it is no
             # longer visible here (the leak path is closed). New-Step recreates
@@ -408,12 +409,14 @@ Describe 'New-Step' -Tag 'Integration' {
             $stepperVar = Get-Variable -Name 'Stepper' -ValueOnly -ErrorAction SilentlyContinue
             $stepperVar | Should -BeNullOrEmpty
 
-            # Execution state is fresh, not resumed from the prior run
-            $execState = Get-Variable -Name '__StepperExecutionState' -ValueOnly
-            $execState.RestoreMode | Should -BeFalse
-            $execState.TargetStep | Should -BeNullOrEmpty
-            $execState.LogPath | Should -Not -Be (Join-Path $TestDrive 'old.log')
-            $execState.NoLogStepIds | Should -Not -Contain $step2Id
+            # Fresh, not resumed: step 1 executed again despite the pre-state
+            # recording it as already completed.
+            $step1Ran | Should -Exist
+
+            # Log config from the old run is discarded, not carried into the new state
+            $state = Import-Clixml -Path $info.StatePath
+            $state.LogPath | Should -Not -Be (Join-Path $TestDrive 'old.log')
+            if ($state.NoLogStepIds) { $state.NoLogStepIds | Should -Not -Contain $step2Id }
 
             New-Step { }
 
