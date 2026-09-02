@@ -107,6 +107,52 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
+
+        It 'Flags an unmanaged $Stepper assignment even when a blank New-Step bootstrap precedes it' {
+            # Regression: a blank New-Step added as a bootstrap becomes the "first"
+            # step, so a line-order predicate goes blind to the real assignment that
+            # follows it. Detection must key off unmanaged code, not line order.
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
+                'New-Step { }'
+                '$Stepper.Name = Read-Host "Name?"'
+                'New-Step { Write-Host $Stepper.Name }'
+                'Stop-Stepper'
+            )
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $r.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -Not -BeNullOrEmpty
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Flags a $Stepper assignment inside a Stepper ignore region (unmanaged by definition)' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
+                '#region Stepper ignore'
+                '$Stepper.Name = Read-Host "Name?"'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host $Stepper.Name }'
+                'Stop-Stepper'
+            )
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $r.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -Not -BeNullOrEmpty
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
     }
 
     Context 'Return type' {

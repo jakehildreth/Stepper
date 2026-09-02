@@ -90,11 +90,21 @@ function Test-StepperScript {
     # (outside any New-Step body) runs before New-Step initializes $Stepper. If no
     # 'if ($null -eq $Stepper)' initializer precedes the first such assignment, the
     # script throws "The property '<Var>' cannot be found on this object."
-    # Find-NewStepBlocks.Start is 0-based; AST StartLineNumber is 1-based.
-    $firstStepLine = if ($blocks.NewStepBlocks.Count -gt 0) {
-        (($blocks.NewStepBlocks | ForEach-Object { $_.Start } | Measure-Object -Minimum).Minimum) + 1
-    } else {
-        [int]::MaxValue
+    #
+    # Detection keys off whether the assignment is contained within a New-Step
+    # scriptblock, NOT line order — a blank bootstrap New-Step placed ahead of the
+    # assignment must not blind the detector.
+    $newStepCalls = @($parsedAst.Ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -eq 'New-Step'
+    }, $true))
+
+    # Collect the scriptblock extents of every New-Step call
+    $stepBodyExtents = @()
+    foreach ($call in $newStepCalls) {
+        $sb = $call.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockExpressionAst] } | Select-Object -First 1
+        if ($sb) { $stepBodyExtents += $sb.Extent }
     }
 
     $stepperAssignments = @($parsedAst.Ast.FindAll({
@@ -105,14 +115,24 @@ function Test-StepperScript {
         $node.Left.Expression.VariablePath.UserPath -eq 'Stepper'
     }, $true))
 
+    # Unmanaged = not contained within any New-Step scriptblock extent
     $unmanagedStepperAssign = @($stepperAssignments | Where-Object {
-        $_.Extent.StartLineNumber -lt $firstStepLine
+        $assign = $_
+        $insideStep = $false
+        foreach ($extent in $stepBodyExtents) {
+            if ($assign.Extent.StartOffset -ge $extent.StartOffset -and
+                $assign.Extent.EndOffset -le $extent.EndOffset) {
+                $insideStep = $true
+                break
+            }
+        }
+        -not $insideStep
     })
 
     if ($unmanagedStepperAssign.Count -gt 0 -and $scriptRaw -notmatch 'if\s*\(\s*\$null\s*-eq\s*\$Stepper\s*\)') {
         $firstVar = $unmanagedStepperAssign[0].Left.Member.SafeGetValue()
         $issues.Add((New-StepperIssue -Code 'UninitializedStepper' -Severity 'Error' `
-            -Message "`$Stepper.$firstVar is assigned before New-Step initializes `$Stepper. Add 'if (`$null -eq `$Stepper) { `$Stepper = @{} }' before the first `$Stepper.<Var> assignment, or run Repair-StepperScript."))
+            -Message "`$Stepper.$firstVar is assigned in unmanaged code before New-Step initializes `$Stepper. Add 'if (`$null -eq `$Stepper) { `$Stepper = @{} }' before the first `$Stepper.<Var> assignment, or run Repair-StepperScript."))
     }
 
     # IsValid = no Error-severity issues

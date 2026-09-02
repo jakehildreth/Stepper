@@ -194,6 +194,28 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
         }
 
+        It 'Should add the $Stepper initializer even when a blank New-Step bootstrap precedes the unmanaged assignment' {
+            # Regression: a blank bootstrap New-Step must not suppress the initializer.
+            $scriptWithBootstrap = @(
+                '[CmdletBinding()]'
+                'param()'
+                'New-Step { }'
+                '$name = "Jake"'
+                'New-Step { Write-Host $name }'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+            $path = New-TempScript ($scriptWithBootstrap -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Match 'if \(\$null -eq \$Stepper\)'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
         It 'Should create a timestamped .bak backup of the original' {
             $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
             $originalContent = Get-Content -Path $path -Raw

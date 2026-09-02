@@ -238,30 +238,45 @@ function ConvertTo-StepperScript {
 
     # Ensure $Stepper is initialized before the first converted assignment runs.
     # Only needed when a converted cross-step variable is first assigned in
-    # unmanaged code (before the first New-Step call) — inside a New-Step body the
-    # step's own init creates $Stepper first. Insert an idempotent initializer via
-    # the shared placement helper so the converted script is runnable.
+    # unmanaged code (outside any New-Step body) — inside a New-Step body the
+    # step's own init creates $Stepper first. Detection keys off containment within
+    # a New-Step scriptblock, not line order, so a blank bootstrap New-Step does not
+    # suppress the initializer. Insert via the shared placement helper.
     $nl = [System.Environment]::NewLine
     $initializer = "if (`$null -eq `$Stepper) { `$Stepper = @{} }"
     if ($content -notmatch 'if \(\$null -eq \$Stepper\)') {
-        $blocks = Find-NewStepBlocks -ScriptPath $resolvedPath
-        # Find-NewStepBlocks.Start is 0-based; AST StartLineNumber is 1-based.
-        $firstStepLine = if ($blocks.NewStepBlocks.Count -gt 0) {
-            (($blocks.NewStepBlocks | ForEach-Object { $_.Start } | Measure-Object -Minimum).Minimum) + 1
-        } else {
-            [int]::MaxValue
-        }
         $initAst = [System.Management.Automation.Language.Parser]::ParseInput(
             $content, [ref]$null, [ref]$null
         )
-        $hasPreStepAssignment = @($initAst.FindAll({
+        $newStepCalls = @($initAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -eq 'New-Step'
+        }, $true))
+        $stepBodyExtents = @()
+        foreach ($call in $newStepCalls) {
+            $sb = $call.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockExpressionAst] } | Select-Object -First 1
+            if ($sb) { $stepBodyExtents += $sb.Extent }
+        }
+        $stepperAssignments = @($initAst.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
             $node.Left -is [System.Management.Automation.Language.MemberExpressionAst] -and
             $node.Left.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
-            $node.Left.Expression.VariablePath.UserPath -eq 'Stepper' -and
-            $node.Extent.StartLineNumber -lt $firstStepLine
-        }, $true)).Count -gt 0
+            $node.Left.Expression.VariablePath.UserPath -eq 'Stepper'
+        }, $true))
+        $hasPreStepAssignment = @($stepperAssignments | Where-Object {
+            $assign = $_
+            $insideStep = $false
+            foreach ($extent in $stepBodyExtents) {
+                if ($assign.Extent.StartOffset -ge $extent.StartOffset -and
+                    $assign.Extent.EndOffset -le $extent.EndOffset) {
+                    $insideStep = $true
+                    break
+                }
+            }
+            -not $insideStep
+        }).Count -gt 0
 
         if ($hasPreStepAssignment) {
             $scriptLines = $content -split '\r?\n'
