@@ -236,8 +236,45 @@ function ConvertTo-StepperScript {
         $content = $prefix + $replacement + $suffix
     }
 
-    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
+    # Ensure $Stepper is initialized before the first converted assignment runs.
+    # Only needed when a converted cross-step variable is first assigned in
+    # unmanaged code (before the first New-Step call) — inside a New-Step body the
+    # step's own init creates $Stepper first. Insert an idempotent initializer via
+    # the shared placement helper so the converted script is runnable.
     $nl = [System.Environment]::NewLine
+    $initializer = "if (`$null -eq `$Stepper) { `$Stepper = @{} }"
+    if ($content -notmatch 'if \(\$null -eq \$Stepper\)') {
+        $blocks = Find-NewStepBlocks -ScriptPath $resolvedPath
+        # Find-NewStepBlocks.Start is 0-based; AST StartLineNumber is 1-based.
+        $firstStepLine = if ($blocks.NewStepBlocks.Count -gt 0) {
+            (($blocks.NewStepBlocks | ForEach-Object { $_.Start } | Measure-Object -Minimum).Minimum) + 1
+        } else {
+            [int]::MaxValue
+        }
+        $initAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $content, [ref]$null, [ref]$null
+        )
+        $hasPreStepAssignment = @($initAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left -is [System.Management.Automation.Language.MemberExpressionAst] -and
+            $node.Left.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            $node.Left.Expression.VariablePath.UserPath -eq 'Stepper' -and
+            $node.Extent.StartLineNumber -lt $firstStepLine
+        }, $true)).Count -gt 0
+
+        if ($hasPreStepAssignment) {
+            $scriptLines = $content -split '\r?\n'
+            $insertIndex = Get-StepperInitInsertionIndex -ScriptPath $resolvedPath
+            $newLines = @()
+            for ($i = 0; $i -lt $insertIndex; $i++) { $newLines += $scriptLines[$i] }
+            $newLines += $initializer
+            for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) { $newLines += $scriptLines[$i] }
+            $content = $newLines -join $nl
+        }
+    }
+
+    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
     $endRegionPattern = '#endregion Stepper ignore'
     $endRegionIndex = $content.IndexOf($endRegionPattern)
 

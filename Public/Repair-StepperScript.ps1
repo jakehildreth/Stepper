@@ -41,13 +41,25 @@ function Repair-StepperScript {
     $initialResult = Test-StepperScript -ScriptPath $ScriptPath
 
     $needsFix = $initialResult.Issues | Where-Object {
-        $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh'
+        $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh', 'UninitializedStepper'
     }
 
     if ($needsFix -and $PSCmdlet.ShouldProcess($ScriptPath, 'Repair Stepper script requirements')) {
         $hasMissingCbh        = $needsFix | Where-Object Code -EQ 'MissingCbh'
         $hasMissingCmdlet     = $needsFix | Where-Object Code -EQ 'MissingCmdletBinding'
         $hasMissingGuard      = $needsFix | Where-Object Code -EQ 'MissingInstallGuard'
+        $hasUninitStepper     = $needsFix | Where-Object Code -EQ 'UninitializedStepper'
+
+        if ($hasUninitStepper) {
+            $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop
+            $insertIndex = Get-StepperInitInsertionIndex -ScriptPath $ScriptPath
+            $newLines = @()
+            for ($i = 0; $i -lt $insertIndex; $i++) { $newLines += $scriptLines[$i] }
+            $newLines += 'if ($null -eq $Stepper) { $Stepper = @{} }'
+            for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) { $newLines += $scriptLines[$i] }
+            New-StepperBackup -Path $ScriptPath | Out-Null
+            $newLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
+        }
 
         if ($hasMissingCmdlet -or $hasMissingGuard) {
             $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop
@@ -135,6 +147,13 @@ function Repair-StepperScript {
 
     foreach ($w in $warnCodes) {
         Write-Warning $w.Message
+    }
+
+    # Surface a repair that was skipped by ShouldProcess (e.g. -WhatIf, or a
+    # high $ConfirmPreference suppressing the Medium-impact change) so it is
+    # not silently a no-op.
+    if ($needsFix -and -not $PSCmdlet.ShouldProcess($ScriptPath, 'Repair Stepper script requirements')) {
+        Write-Verbose "[Stepper] Repair skipped for $ScriptPath (declined, -WhatIf, or ConfirmPreference above Medium). Re-run with -Confirm:`$false to apply."
     }
 
     # Return post-fix result

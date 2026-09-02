@@ -85,6 +85,36 @@ function Test-StepperScript {
             -Message "Stop-Stepper is missing. Call Stop-Stepper at the end of the script to mark completion."))
     }
 
+    # --- Error: UninitializedStepper ---
+    # A converted cross-step variable assigned to $Stepper.<Var> in unmanaged code
+    # (outside any New-Step body) runs before New-Step initializes $Stepper. If no
+    # 'if ($null -eq $Stepper)' initializer precedes the first such assignment, the
+    # script throws "The property '<Var>' cannot be found on this object."
+    # Find-NewStepBlocks.Start is 0-based; AST StartLineNumber is 1-based.
+    $firstStepLine = if ($blocks.NewStepBlocks.Count -gt 0) {
+        (($blocks.NewStepBlocks | ForEach-Object { $_.Start } | Measure-Object -Minimum).Minimum) + 1
+    } else {
+        [int]::MaxValue
+    }
+
+    $stepperAssignments = @($parsedAst.Ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.MemberExpressionAst] -and
+        $node.Left.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.Expression.VariablePath.UserPath -eq 'Stepper'
+    }, $true))
+
+    $unmanagedStepperAssign = @($stepperAssignments | Where-Object {
+        $_.Extent.StartLineNumber -lt $firstStepLine
+    })
+
+    if ($unmanagedStepperAssign.Count -gt 0 -and $scriptRaw -notmatch 'if\s*\(\s*\$null\s*-eq\s*\$Stepper\s*\)') {
+        $firstVar = $unmanagedStepperAssign[0].Left.Member.SafeGetValue()
+        $issues.Add((New-StepperIssue -Code 'UninitializedStepper' -Severity 'Error' `
+            -Message "`$Stepper.$firstVar is assigned before New-Step initializes `$Stepper. Add 'if (`$null -eq `$Stepper) { `$Stepper = @{} }' before the first `$Stepper.<Var> assignment, or run Repair-StepperScript."))
+    }
+
     # IsValid = no Error-severity issues
     $isValid = -not ($issues | Where-Object Severity -EQ 'Error')
 

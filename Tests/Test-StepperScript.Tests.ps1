@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/New-StepperIssue.ps1"
+    . "$ModulePath/Private/Get-StepperInitInsertionIndex.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
 
     function New-TempScript {
@@ -32,6 +33,81 @@ BeforeAll {
 }
 
 Describe 'Test-StepperScript' -Tag 'Unit' {
+
+    Context 'UninitializedStepper detection' {
+        It 'Flags a converted $Stepper.<Var> assignment before the first New-Step with no initializer' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
+                '$Stepper.Name = Read-Host "Name?"'
+                'New-Step { Write-Host $Stepper.Name }'
+                'Stop-Stepper'
+            )
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $issue = $r.Issues | Where-Object Code -EQ 'UninitializedStepper'
+                $issue | Should -Not -BeNullOrEmpty
+                $issue.Severity | Should -Be 'Error'
+                $r.IsValid | Should -BeFalse
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Does not flag when the initializer precedes the first unmanaged $Stepper assignment' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
+                'if ($null -eq $Stepper) { $Stepper = @{} }'
+                '$Stepper.Name = Read-Host "Name?"'
+                'New-Step { Write-Host $Stepper.Name }'
+                'Stop-Stepper'
+            )
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $r.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -BeNullOrEmpty
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Does not flag when $Stepper is only assigned inside New-Step blocks' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
+                'New-Step { $Stepper.Name = "x" }'
+                'New-Step { Write-Host $Stepper.Name }'
+                'Stop-Stepper'
+            )
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $r.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -BeNullOrEmpty
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Does not flag a script with no $Stepper member assignments' {
+            $path = New-TempScript ($ValidScript -split [System.Environment]::NewLine)
+            try {
+                $r = Test-StepperScript -ScriptPath $path
+                $r.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -BeNullOrEmpty
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+    }
 
     Context 'Return type' {
         It 'Should return a PSCustomObject' {

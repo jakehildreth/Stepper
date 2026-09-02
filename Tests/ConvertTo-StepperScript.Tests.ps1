@@ -4,6 +4,7 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Find-CrossStepVariables.ps1"
+    . "$ModulePath/Private/Get-StepperInitInsertionIndex.ps1"
     . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Test-StepperConversionComplete.ps1"
     . "$ModulePath/Public/ConvertTo-StepperScript.ps1"
@@ -177,6 +178,22 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
         }
 
+        It 'Should not add the $Stepper initializer when all candidates are assigned inside New-Step blocks' {
+            # CrossStepScript assigns $servers/$count only inside New-Step bodies,
+            # so the initializer is unnecessary and must not be emitted.
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Match '\$Stepper\.Servers'
+                $result | Should -Not -Match 'if \(\$null -eq \$Stepper\)'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
         It 'Should create a timestamped .bak backup of the original' {
             $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
             $originalContent = Get-Content -Path $path -Raw
@@ -201,6 +218,65 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
                 $errors = $null
                 [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors) | Out-Null
                 $errors | Should -HaveCount 0
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should initialize $Stepper before the first converted assignment' {
+            # Cross-step variable first assigned in unmanaged (script-level) code
+            # that runs before any New-Step. Without an initializer the converted
+            # '$Stepper.Name = ...' line fails with "property cannot be found".
+            $scriptWithUnmanagedFirst = @(
+                '[CmdletBinding()]'
+                'param()'
+                '$name = Read-Host "Name?"'
+                'New-Step {'
+                '    Write-Host $name'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+            $path = New-TempScript ($scriptWithUnmanagedFirst -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                # An idempotent initializer must appear before the first $Stepper. assignment
+                $result | Should -Match 'if \(\$null -eq \$Stepper\)'
+                $initIndex = $result.IndexOf('if ($null -eq $Stepper)')
+                $assignIndex = $result.IndexOf('$Stepper.Name')
+                $assignIndex | Should -BeGreaterThan -1
+                $initIndex | Should -BeLessThan $assignIndex
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should produce a converted script that runs without property errors when a cross-step variable is set in unmanaged code' {
+            # End-to-end: the converted script must be runnable. Dot-source the
+            # converted script body in a child scope with $Stepper undefined and
+            # confirm the unmanaged assignment no longer throws.
+            $scriptWithUnmanagedFirst = @(
+                '[CmdletBinding()]'
+                'param()'
+                '$name = "seed"'
+                'New-Step {'
+                '    Write-Host $name'
+                '}'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+            $path = New-TempScript ($scriptWithUnmanagedFirst -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                # Execute only up to (but excluding) the first New-Step call,
+                # simulating the unmanaged prefix that runs before step init.
+                $prefix = $result.Substring(0, $result.IndexOf('New-Step'))
+                $prefix = $prefix -replace '\[CmdletBinding\(\)\]', '' -replace 'param\(\)', ''
+                { Invoke-Expression $prefix } | Should -Not -Throw
             }
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue

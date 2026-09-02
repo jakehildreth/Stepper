@@ -209,7 +209,15 @@ function New-Step {
             $preRepairResult = Test-StepperScript -ScriptPath $scriptPath
             $needsRestart    = $preRepairResult.Issues |
                 Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard' }
-            Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue | Out-Null
+
+            # Auto-repair only the structural/declarative issues. UninitializedStepper
+            # is a semantic change to the user's script and is handled via prompt below.
+            $needsAutoRepair = $preRepairResult.Issues |
+                Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh' }
+            if ($needsAutoRepair) {
+                Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue | Out-Null
+            }
+
             if ($needsRestart) {
                 $scriptName = Split-Path $scriptPath -Leaf
                 $added = ($needsRestart | ForEach-Object {
@@ -222,6 +230,43 @@ function New-Step {
                 Write-Host "$added has been added to $scriptName." -ForegroundColor Green
                 Write-Host "Please re-run $scriptName." -ForegroundColor Green
                 exit
+            }
+
+            # UninitializedStepper is a semantic fix to the user's data initialization,
+            # so ask before repairing. Repair + re-run (the initializer must execute in
+            # a fresh run), ignore-and-continue (script will likely throw), or quit.
+            $uninitStepper = $preRepairResult.Issues | Where-Object { $_.Code -eq 'UninitializedStepper' }
+            if ($uninitStepper) {
+                $scriptName = Split-Path $scriptPath -Leaf
+                Write-Host ""
+                Write-Host "[!] $scriptName assigns `$Stepper.<Var> before Stepper initializes `$Stepper." -ForegroundColor Magenta
+                Write-Host "    This run will fail unless `$Stepper is initialized first."
+                Write-Host ""
+                Write-Host "  [Y] Repair (add initializer) and re-run $scriptName (Default)" -ForegroundColor Cyan
+                Write-Host "  [i] Ignore and continue" -ForegroundColor White
+                Write-Host "  [q] Quit" -ForegroundColor White
+                Write-Host ""
+                Write-Host "Choice? [Y/i/q]: " -NoNewline
+                try {
+                    $uninitChoice = Read-Host
+                } catch {
+                    # Non-interactive context - default to repair (prevents a guaranteed failure)
+                    $uninitChoice = 'y'
+                    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to repair"
+                }
+
+                if ($uninitChoice -eq '' -or $uninitChoice -eq 'Y' -or $uninitChoice -eq 'y') {
+                    Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue -Confirm:$false | Out-Null
+                    Write-Host ""
+                    Write-Host "Initializer added to $scriptName. Please re-run $scriptName." -ForegroundColor Green
+                    exit
+                }
+                elseif ($uninitChoice -eq 'Q' -or $uninitChoice -eq 'q') {
+                    Write-Host ""
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit
+                }
+                # 'i' or anything else: ignore and continue
             }
         }
 
