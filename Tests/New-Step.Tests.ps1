@@ -1233,7 +1233,7 @@ Describe 'New-Step' -Tag 'Integration' {
                 $counter.Calls++
                 if ($counter.Calls -lt 2) { throw 'transient' }
             }
-            Assert-MockCalled Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 1 -Scope It
         }
 
         It 'Includes wait time in retry indicator message' {
@@ -1242,7 +1242,7 @@ Describe 'New-Step' -Tag 'Integration' {
                 $counter.Calls++
                 if ($counter.Calls -lt 2) { throw 'transient' }
             }
-            Assert-MockCalled Write-Host -ParameterFilter { $Object -match 'Retrying in \d+s' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -match 'Retrying in \d+s' } -Exactly 1 -Scope It
         }
 
         It 'Includes attempt number in retry indicator message' {
@@ -1251,12 +1251,12 @@ Describe 'New-Step' -Tag 'Integration' {
                 $counter.Calls++
                 if ($counter.Calls -lt 2) { throw 'transient' }
             }
-            Assert-MockCalled Write-Host -ParameterFilter { $Object -match 'attempt 2 of' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -match 'attempt 2 of' } -Exactly 1 -Scope It
         }
 
         It 'Does not display retry indicator when retry is not enabled' {
             New-Step { }
-            Assert-MockCalled Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 0 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -match '\[>\]' } -Exactly 0 -Scope It
         }
 
         It 'Displays retry indicator with Yellow foreground color' {
@@ -1265,7 +1265,7 @@ Describe 'New-Step' -Tag 'Integration' {
                 $counter.Calls++
                 if ($counter.Calls -lt 2) { throw 'transient' }
             }
-            Assert-MockCalled Write-Host -ParameterFilter { $ForegroundColor -eq 'Yellow' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $ForegroundColor -eq 'Yellow' } -Exactly 1 -Scope It
         }
     }
 
