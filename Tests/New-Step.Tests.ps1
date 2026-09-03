@@ -1281,12 +1281,54 @@ Describe 'New-Step' -Tag 'Integration' {
             Should -Invoke Repair-StepperScript -Exactly 0 -Scope It
         }
 
-        It 'Should call Repair-StepperScript when not specified' {
+        It 'Should call Repair-StepperScript when an auto-repairable issue is present' {
             $info = New-TestStepperScript
             Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+            Mock Test-StepperScript {
+                [PSCustomObject]@{
+                    IsValid = $false
+                    Issues  = @([PSCustomObject]@{ Code = 'MissingCbh'; Severity = 'Warning'; Message = 'x' })
+                }
+            }
 
             New-Step { }
             Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
+        }
+
+        It 'Should prompt before repairing when Test-StepperScript reports UninitializedStepper' {
+            $info = New-TestStepperScript
+            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+            Mock Test-StepperScript {
+                [PSCustomObject]@{
+                    IsValid = $false
+                    Issues  = @([PSCustomObject]@{ Code = 'UninitializedStepper'; Severity = 'Error'; Message = 'x' })
+                }
+            }
+            # Answering 'Y' triggers repair + exit; the throw intercepts the exit.
+            Mock Read-Host { 'Y' }
+            Mock Repair-StepperScript { throw 'repair-intercept' }
+            Mock Write-Host {}
+
+            { New-Step { } } | Should -Throw 'repair-intercept'
+            Should -Invoke Read-Host -Exactly 1 -Scope It
+            Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
+        }
+
+        It 'Should not repair when the user answers Ignore to the UninitializedStepper prompt' {
+            $info = New-TestStepperScript
+            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+            Mock Test-StepperScript {
+                [PSCustomObject]@{
+                    IsValid = $false
+                    Issues  = @([PSCustomObject]@{ Code = 'UninitializedStepper'; Severity = 'Error'; Message = 'x' })
+                }
+            }
+            Mock Read-Host { 'i' }
+            Mock Repair-StepperScript { throw 'repair-should-not-run' }
+            Mock Write-Host {}
+
+            { New-Step { } } | Should -Not -Throw 'repair-should-not-run'
+            Should -Invoke Repair-StepperScript -Exactly 0 -Scope It
         }
     }
 

@@ -182,4 +182,59 @@ Describe 'Get-StepIdentifier' -Tag 'Unit' {
             $result | Should -Be "${script:UserScript4}:12"
         }
     }
+
+    Context 'When Stepper.psm1 frame comes from a built artefact (not the source repo)' {
+        # Regression: Get-StepIdentifier used to skip module frames only by comparing
+        # against the source repo path, so a built artefact's Stepper.psm1 frame was
+        # mistaken for the user's script and New-Step validated/repaired the module.
+        BeforeAll {
+            $script:UserScript5 = Join-Path $TestDrive 'user-script5.ps1'
+            Set-Content -Path $script:UserScript5 -Value 'New-Step { }'
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $script:ArtefactFrames = @(
+                [PSCustomObject]@{
+                    ScriptName       = "${TestDrive}${sep}Artefacts${sep}Unpacked${sep}Stepper${sep}Stepper.psm1"
+                    ScriptLineNumber = 8
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                },
+                [PSCustomObject]@{
+                    ScriptName       = $script:UserScript5
+                    ScriptLineNumber = 5
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                }
+            )
+            Mock Get-PSCallStack { $script:ArtefactFrames }
+        }
+
+        It 'Skips the built artefact Stepper.psm1 frame and returns the user script' {
+            $result = Get-StepIdentifier
+            $result | Should -Be "${script:UserScript5}:5"
+        }
+    }
+
+    Context 'When module frames come from an installed module path' {
+        BeforeAll {
+            $script:UserScript6 = Join-Path $TestDrive 'user-script6.ps1'
+            Set-Content -Path $script:UserScript6 -Value 'New-Step { }'
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $script:InstalledFrames = @(
+                [PSCustomObject]@{
+                    ScriptName       = "${TestDrive}${sep}Modules${sep}Stepper${sep}Stepper.psm1"
+                    ScriptLineNumber = 700
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                },
+                [PSCustomObject]@{
+                    ScriptName       = $script:UserScript6
+                    ScriptLineNumber = 2
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                }
+            )
+            Mock Get-PSCallStack { $script:InstalledFrames }
+        }
+
+        It 'Skips the installed Stepper.psm1 frame and returns the user script' {
+            $result = Get-StepIdentifier
+            $result | Should -Be "${script:UserScript6}:2"
+        }
+    }
 }

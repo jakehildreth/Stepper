@@ -236,8 +236,60 @@ function ConvertTo-StepperScript {
         $content = $prefix + $replacement + $suffix
     }
 
-    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
+    # Ensure $Stepper is initialized before the first converted assignment runs.
+    # Only needed when a converted cross-step variable is first assigned in
+    # unmanaged code (outside any New-Step body) — inside a New-Step body the
+    # step's own init creates $Stepper first. Detection keys off containment within
+    # a New-Step scriptblock, not line order, so a blank bootstrap New-Step does not
+    # suppress the initializer. Insert via the shared placement helper.
     $nl = [System.Environment]::NewLine
+    $initializer = "if (`$null -eq `$Stepper) { `$Stepper = @{} }"
+    if ($content -notmatch 'if \(\$null -eq \$Stepper\)') {
+        $initAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $content, [ref]$null, [ref]$null
+        )
+        $newStepCalls = @($initAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+            $node.GetCommandName() -eq 'New-Step'
+        }, $true))
+        $stepBodyExtents = @()
+        foreach ($call in $newStepCalls) {
+            $sb = $call.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockExpressionAst] } | Select-Object -First 1
+            if ($sb) { $stepBodyExtents += $sb.Extent }
+        }
+        $stepperAssignments = @($initAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left -is [System.Management.Automation.Language.MemberExpressionAst] -and
+            $node.Left.Expression -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            $node.Left.Expression.VariablePath.UserPath -eq 'Stepper'
+        }, $true))
+        $hasPreStepAssignment = @($stepperAssignments | Where-Object {
+            $assign = $_
+            $insideStep = $false
+            foreach ($extent in $stepBodyExtents) {
+                if ($assign.Extent.StartOffset -ge $extent.StartOffset -and
+                    $assign.Extent.EndOffset -le $extent.EndOffset) {
+                    $insideStep = $true
+                    break
+                }
+            }
+            -not $insideStep
+        }).Count -gt 0
+
+        if ($hasPreStepAssignment) {
+            $scriptLines = $content -split '\r?\n'
+            $insertIndex = Get-StepperInitInsertionIndex -ScriptPath $resolvedPath
+            $newLines = @()
+            for ($i = 0; $i -lt $insertIndex; $i++) { $newLines += $scriptLines[$i] }
+            $newLines += $initializer
+            for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) { $newLines += $scriptLines[$i] }
+            $content = $newLines -join $nl
+        }
+    }
+
+    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
     $endRegionPattern = '#endregion Stepper ignore'
     $endRegionIndex = $content.IndexOf($endRegionPattern)
 

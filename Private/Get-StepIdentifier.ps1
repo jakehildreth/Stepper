@@ -26,17 +26,25 @@ function Get-StepIdentifier {
             continue
         }
 
-        # Skip frames from the Stepper module directory
+        # Skip frames from the Stepper module, whether loaded from the source repo,
+        # a built artefact, or an installed module copy. The module file is always
+        # named Stepper.psm1 and its functions live under a Stepper/Private or
+        # Stepper/Public directory; matching on the path shape (not the source repo
+        # location) ensures built/installed copies are also recognized as module
+        # frames and never mistaken for the user's script.
         $stepperDir = Split-Path -Path $PSScriptRoot -Parent
         # Normalize paths for cross-platform comparison
         $normalizedScript = $scriptName -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
         $normalizedStepperDir = $stepperDir -replace '[\\/]', [System.IO.Path]::DirectorySeparatorChar
+        $sep = [System.IO.Path]::DirectorySeparatorChar
 
-        # Skip if it's from the module's Private/Public folders or the main PSM1
-        if ($normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Private$([System.IO.Path]::DirectorySeparatorChar)*" -or
-            $normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Public$([System.IO.Path]::DirectorySeparatorChar)*" -or
-            $normalizedScript -like "$normalizedStepperDir$([System.IO.Path]::DirectorySeparatorChar)Stepper.psm1" -or
-            $normalizedScript -like "*$([System.IO.Path]::DirectorySeparatorChar)Modules$([System.IO.Path]::DirectorySeparatorChar)Stepper$([System.IO.Path]::DirectorySeparatorChar)*") {
+        $isModulePsm1   = $normalizedScript -like "*${sep}Stepper.psm1"
+        $isModuleFolder = $normalizedScript -like "*${sep}Stepper${sep}Private${sep}*" -or
+                          $normalizedScript -like "*${sep}Stepper${sep}Public${sep}*"
+        $isSourceRepo   = $normalizedScript -like "$normalizedStepperDir${sep}Private${sep}*" -or
+                          $normalizedScript -like "$normalizedStepperDir${sep}Public${sep}*"
+
+        if ($isModulePsm1 -or $isModuleFolder -or $isSourceRepo) {
             continue
         }
 
