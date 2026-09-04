@@ -61,15 +61,29 @@ Describe 'New-Step' -Tag 'Integration' {
     BeforeAll {
         Mock Write-Host {}
         Mock Write-Verbose {}
-        Mock Test-StepperScript { [PSCustomObject]@{ IsValid = $true; Issues = @() } }
-        Mock Repair-StepperScript { [PSCustomObject]@{ IsValid = $true; Issues = @() } }
-        Mock Find-NewStepBlocks { [PSCustomObject]@{ NewStepBlocks = @(); StopStepperLine = -1 } }
-        Mock Find-UnmanagedCodeBlocks { @() }
-        Mock Show-MoreDetails {}
-        # Default: sentinel already present → skip conversion hook so existing tests are unaffected
-        Mock Test-StepperConversionComplete { $true }
-        Mock Find-CrossStepVariables { @() }
-        Mock ConvertTo-StepperScript {}
+    }
+
+    BeforeEach {
+        # New-Step no longer initializes itself. Start-Stepper owns init and sets
+        # the __StepperInitialized sentinel. Simulate a completed Start-Stepper run
+        # so the default mode for every test is "already initialized".
+        $__StepperInitialized = $true
+        $__StepperExecutionState = @{
+            RestoreMode    = $false
+            TargetStep     = $null
+            LogPath        = $null
+            LoggingEnabled = $true
+            NoLogStepIds   = @()
+        }
+    }
+
+    AfterEach {
+        Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
+        Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
+        Remove-Variable -Name 'Stepper' -ErrorAction SilentlyContinue
+        Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name 'Stepper' -Scope Global -ErrorAction SilentlyContinue
     }
 
     Context 'Parameter validation' {
@@ -185,8 +199,8 @@ Describe 'New-Step' -Tag 'Integration' {
         BeforeEach {
             $script:StepperVarInfo = New-TestStepperScript
             Mock Get-StepIdentifier { "$($script:StepperVarInfo.Path):$($script:StepperVarInfo.FirstStepLine)" }
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
+            # Start-Stepper owns $Stepper creation now; seed it here.
+            $Stepper = @{}
         }
 
         It 'StepperData is written to state after step executes' {
@@ -254,18 +268,6 @@ Describe 'New-Step' -Tag 'Integration' {
                     "$($script:ResumeInfo.Path):$($script:ResumeInfo.FirstStepLine + 1)"
                 }
             }
-            Mock Read-Host { 'R' }
-
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'Skips step 1 (already completed): state not updated for skipped step' {
-            # Call step 1 (should be skipped). The state file should NOT be updated
-            # (no re-write for a skipped step). The pre-existing hash should still match.
-            New-Step { }
-            $state = Import-Clixml -Path $script:ResumeInfo.StatePath
-            $state.LastCompletedStep | Should -Be "$($script:ResumeInfo.Path):$($script:ResumeInfo.FirstStepLine)"
         }
 
         It 'Executes step 2 when called in resume mode with RestoreMode false' {
@@ -290,217 +292,16 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context 'Resume logic: Start over' {
-        BeforeEach {
-            $script:StartOverInfo = New-TestStepperScript -BaseName "startover-$(New-Guid)" -StepCount 2
-            $step1Id = "$($script:StartOverInfo.Path):$($script:StartOverInfo.FirstStepLine)"
-            $scriptHash = Get-ScriptHash -ScriptPath $script:StartOverInfo.Path
-            Write-StepperState -StatePath $script:StartOverInfo.StatePath `
-                -ScriptHash $scriptHash `
-                -LastCompletedStep $step1Id `
-                -StepNumber 1
-
-            $script:StartOverCallCount = 0
-            Mock Get-StepIdentifier {
-                $script:StartOverCallCount++
-                if ($script:StartOverCallCount -eq 1) {
-                    "$($script:StartOverInfo.Path):$($script:StartOverInfo.FirstStepLine)"
-                } else {
-                    "$($script:StartOverInfo.Path):$($script:StartOverInfo.FirstStepLine + 1)"
-                }
-            }
-            Mock Read-Host { 'S' }
-
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'State after start over reflects step 1 completed (not resumed from prior)' {
-            # Pre-state says step 1 done; choose S; step 1 runs again; new state = step 1
-            New-Step { }
-            $state = Import-Clixml -Path $script:StartOverInfo.StatePath
-            $state.LastCompletedStepNumber | Should -Be 1
-            $state.LastCompletedStep | Should -Be "$($script:StartOverInfo.Path):$($script:StartOverInfo.FirstStepLine)"
-        }
-
-        It 'Executes step 1 again after Start over' {
-            $step1Executed = Join-Path $TestDrive "step1-$(New-Guid).txt"
-            New-Step { Set-Content -Path $step1Executed -Value 'ran' }
-            $step1Executed | Should -Exist
-        }
-    }
-
-    Context 'Resume logic: changed script defaults to Start over' {
-        BeforeEach {
-            $script:ChangedInfo = New-TestStepperScript -BaseName "changed-$(New-Guid)" -StepCount 2
-            $step1Id = "$($script:ChangedInfo.Path):$($script:ChangedInfo.FirstStepLine)"
-            # State was written with a DIFFERENT hash to simulate script modification
-            Write-StepperState -StatePath $script:ChangedInfo.StatePath `
-                -ScriptHash 'stale-hash-does-not-match' `
-                -LastCompletedStep $step1Id `
-                -StepNumber 1
-
-            $script:ChangedCallCount = 0
-            Mock Get-StepIdentifier {
-                $script:ChangedCallCount++
-                if ($script:ChangedCallCount -eq 1) {
-                    "$($script:ChangedInfo.Path):$($script:ChangedInfo.FirstStepLine)"
-                } else {
-                    "$($script:ChangedInfo.Path):$($script:ChangedInfo.FirstStepLine + 1)"
-                }
-            }
-            # Default (empty) response for changed script = Start over
-            Mock Read-Host { '' }
-
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'State after start over reflects current hash (stale hash replaced)' {
-            New-Step { }
-            $state = Import-Clixml -Path $script:ChangedInfo.StatePath
-            $currentHash = Get-ScriptHash -ScriptPath $script:ChangedInfo.Path
-            $state.ScriptHash | Should -Be $currentHash
-        }
-
-        It 'Runs step 1 from scratch when starting over on changed script' {
-            $sideEffect = Join-Path $TestDrive "changed-side-$(New-Guid).txt"
-            New-Step { Set-Content -Path $sideEffect -Value 'ran' }
-            $sideEffect | Should -Exist
-        }
-    }
-
-    Context 'Pristine Start Over' {
-        BeforeEach {
-            Remove-Variable -Name 'Stepper' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'Start Over does not reuse data from previous runs' {
-            $info = New-TestStepperScript -BaseName "pristine-$(New-Guid)" -StepCount 2
-            $step1Id = "$($info.Path):$($info.FirstStepLine)"
-            $step2Id = "$($info.Path):$($info.FirstStepLine + 1)"
-            Write-StepperState -StatePath $info.StatePath `
-                -ScriptHash (Get-ScriptHash -ScriptPath $info.Path) `
-                -LastCompletedStep $step1Id `
-                -StepNumber 1 `
-                -StepperData @{ PriorRunSecret = 'stale' } `
-                -LogPath (Join-Path $TestDrive 'old.log') `
-                -LoggingEnabled $true `
-                -NoLogStepIds @($step2Id)
-
-            # Stale session variable: same-console rerun left data behind
-            $Stepper = @{ PriorRunSecret = 'stale' }
-
-            $script:PristineCallCount = 0
-            Mock Get-StepIdentifier {
-                $script:PristineCallCount++
-                if ($script:PristineCallCount -eq 1) { $step1Id } else { $step2Id }
-            }
-            Mock Read-Host { 'S' }
-
-            $step1Ran = Join-Path $TestDrive "pristine-step1-$(New-Guid).txt"
-            New-Step { Set-Content -Path $step1Ran -Value 'ran' }
-
-            # The stale $Stepper was removed from the caller's scope: it is no
-            # longer visible here (the leak path is closed). New-Step recreates
-            # an empty one internally for state persistence.
-            $stepperVar = Get-Variable -Name 'Stepper' -ValueOnly -ErrorAction SilentlyContinue
-            $stepperVar | Should -BeNullOrEmpty
-
-            # Fresh, not resumed: step 1 executed again despite the pre-state
-            # recording it as already completed.
-            $step1Ran | Should -Exist
-
-            # Log config from the old run is discarded, not carried into the new state
-            $state = Import-Clixml -Path $info.StatePath
-            $state.LogPath | Should -Not -Be (Join-Path $TestDrive 'old.log')
-            if ($state.NoLogStepIds) { $state.NoLogStepIds | Should -Not -Contain $step2Id }
-
-            New-Step { }
-
-            # The re-persistence mechanism is dead: new state carries no prior data
-            $state = Import-Clixml -Path $info.StatePath
-            $state.LastCompletedStep | Should -Be $step2Id
-            if ($state.StepperData) {
-                $state.StepperData.Keys | Should -Not -Contain 'PriorRunSecret'
-            }
-        }
-    }
-
-    Context 'Missing Stop-Stepper: user chooses A (add)' {
-        BeforeEach {
-            # Script without Stop-Stepper
-            $script:NoStopPath = Join-Path $TestDrive "nostop-$(New-Guid).ps1"
-            Set-Content -Path $script:NoStopPath -Value @(
-                '#requires -Modules Stepper'
-                '[CmdletBinding()]'
-                'param()'
-                'New-Step { }'
-            )
-            Mock Get-StepIdentifier { "$($script:NoStopPath):4" }
-            Mock Read-Host { 'A' }
-            # Remove-StepperState fires right before `exit` in the A-path.
-            # Throwing here intercepts the exit so it never propagates and kills Pester.
-            Mock Remove-StepperState { throw [System.Exception]::new('Interrupted before exit') }
-
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'Appends Stop-Stepper to the script file' {
-            try { New-Step { } } catch { }
-            $content = Get-Content -Path $script:NoStopPath -Raw
-            $content | Should -Match 'Stop-Stepper'
-        }
-    }
-
-    Context 'Missing Stop-Stepper: user chooses C (continue)' {
-        BeforeEach {
-            $script:NoStopContinuePath = Join-Path $TestDrive "nostop-c-$(New-Guid).ps1"
-            Set-Content -Path $script:NoStopContinuePath -Value @(
-                '#requires -Modules Stepper'
-                '[CmdletBinding()]'
-                'param()'
-                'New-Step { }'
-            )
-            Mock Get-StepIdentifier { "$($script:NoStopContinuePath):4" }
-            Mock Read-Host { 'C' }
-
-            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -ErrorAction SilentlyContinue
-        }
-
-        It 'Creates a state file and does not modify the script' {
-            New-Step { }
-            $statePath = Get-StepperStatePath -ScriptPath $script:NoStopContinuePath
-            $statePath | Should -Exist
-            $content = Get-Content -Path $script:NoStopContinuePath -Raw
-            $content | Should -Not -Match 'Stop-Stepper'
-        }
-    }
-
     Context 'Logging: default log path' {
         BeforeEach {
             $script:LogDefaultInfo = New-TestStepperScript -BaseName 'log-default'
             Mock Get-StepIdentifier { "$($script:LogDefaultInfo.Path):$($script:LogDefaultInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
             Mock Write-StepperLog {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
         }
 
         It 'Should call Write-StepperLog when a step executes' {
             New-Step { }
             Should -Invoke Write-StepperLog -Scope It
-        }
-
-        It 'Should store the resolved log path in execution state' {
-            New-Step { }
-            $expectedLog = "$($script:LogDefaultInfo.Path).stepper.log"
-            $state = Import-Clixml -Path $script:LogDefaultInfo.StatePath
-            $state.LogPath | Should -Be $expectedLog
         }
     }
 
@@ -509,39 +310,15 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:LogExplicitInfo = New-TestStepperScript -BaseName 'log-explicit'
             $script:ExplicitLogPath = Join-Path $TestDrive 'explicit.log'
             Mock Get-StepIdentifier { "$($script:LogExplicitInfo.Path):$($script:LogExplicitInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:ExplicitLogPath); HasConflict = $false; NoLogStepIds = @() } }
             Mock Write-StepperLog {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            # Log-path resolution moved to Start-Stepper; seed the resolved path.
+            $__StepperExecutionState.LogPath = $script:ExplicitLogPath
         }
 
-        It 'Should use the explicit log path from Get-StepLogConfig' {
+        It 'Should persist the resolved log path in state' {
             New-Step -LogPath $script:ExplicitLogPath { }
             $state = Import-Clixml -Path $script:LogExplicitInfo.StatePath
             $state.LogPath | Should -Be $script:ExplicitLogPath
-        }
-    }
-
-    Context 'Logging: conflicting -LogPath values prompt user' {
-        BeforeEach {
-            $script:ConflictInfo = New-TestStepperScript -BaseName 'log-conflict'
-            Mock Get-StepIdentifier { "$($script:ConflictInfo.Path):$($script:ConflictInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig {
-                [PSCustomObject]@{
-                    UniqueStaticLogPaths = @((Join-Path $TestDrive 'a.log'), (Join-Path $TestDrive 'b.log'))
-                    HasConflict          = $true
-                    NoLogStepIds         = @()
-                }
-            }
-            Mock Write-StepperLog {}
-            Mock Read-Host { '1' }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
-        }
-
-        It 'Should prompt the user when -LogPath conflicts are detected' {
-            New-Step { }
-            Should -Invoke Read-Host -Scope It
         }
     }
 
@@ -550,10 +327,8 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:MismatchInfo = New-TestStepperScript -BaseName 'log-mismatch'
             $script:ResolvedLog = Join-Path $TestDrive 'resolved.log'
             Mock Get-StepIdentifier { "$($script:MismatchInfo.Path):$($script:MismatchInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:ResolvedLog); HasConflict = $false; NoLogStepIds = @() } }
             Mock Write-StepperLog {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:ResolvedLog
         }
 
         It 'Should write a warning when -LogPath differs from the resolved path' {
@@ -590,9 +365,7 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:TranscriptLogInfo = New-TestStepperScript -BaseName 'log-transcript-section'
             $script:TranscriptLogPath = Join-Path $TestDrive 'transcript-test.log'
             Mock Get-StepIdentifier { "$($script:TranscriptLogInfo.Path):$($script:TranscriptLogInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:TranscriptLogPath); HasConflict = $false; NoLogStepIds = @() } }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:TranscriptLogPath
         }
 
         It 'Should write a transcript section header to the log on successful step' {
@@ -619,9 +392,7 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:FailLogInfo = New-TestStepperScript -BaseName 'log-fail'
             $script:FailLogPath = Join-Path $TestDrive 'fail-test.log'
             Mock Get-StepIdentifier { "$($script:FailLogInfo.Path):$($script:FailLogInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:FailLogPath); HasConflict = $false; NoLogStepIds = @() } }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:FailLogPath
         }
 
         It 'Should write an [ERROR] entry to the log when a step throws' {
@@ -665,10 +436,14 @@ Describe 'New-Step' -Tag 'Integration' {
                     "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine + 1)"
                 }
             }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:SkipLogPath); HasConflict = $false; NoLogStepIds = @() } }
-            Mock Read-Host { 'R' }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            # Simulate Start-Stepper having resumed: restore mode targets step 1.
+            $__StepperExecutionState = @{
+                RestoreMode    = $true
+                TargetStep     = $step1Id
+                LogPath        = $script:SkipLogPath
+                LoggingEnabled = $true
+                NoLogStepIds   = @()
+            }
         }
 
         It 'Should write a Skipping log entry for a previously completed step' {
@@ -686,8 +461,6 @@ Describe 'New-Step' -Tag 'Integration' {
         }
 
         It 'Should include step name in the SKIPPED section for a named step' {
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
             $namedSkipInfo = New-TestStepperScript -BaseName "log-skip-named-$(New-Guid)" -StepCount 2
             $namedStep1Id  = "$($namedSkipInfo.Path):$($namedSkipInfo.FirstStepLine)"
             $namedHash     = Get-ScriptHash -ScriptPath $namedSkipInfo.Path
@@ -706,41 +479,18 @@ Describe 'New-Step' -Tag 'Integration' {
                 }
             }
             $namedSkipLog = Join-Path $TestDrive 'skip-named.log'
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($namedSkipLog); HasConflict = $false; NoLogStepIds = @() } }
+            $__StepperExecutionState = @{
+                RestoreMode    = $true
+                TargetStep     = $namedStep1Id
+                LogPath        = $namedSkipLog
+                LoggingEnabled = $true
+                NoLogStepIds   = @()
+            }
 
             New-Step 'Provision Infra' { }
             New-Step { }
             $logContent = Get-Content -Path $namedSkipLog -Raw -ErrorAction SilentlyContinue
             $logContent | Should -Match "Skipping step \d+/\d+.*'Provision Infra'.*already completed"
-        }
-    }
-
-    Context 'Logging: -NoLog step scope prompt' {
-        BeforeEach {
-            $script:NoLogInfo = New-TestStepperScript -BaseName 'log-nolog'
-            Mock Get-StepIdentifier { "$($script:NoLogInfo.Path):$($script:NoLogInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig {
-                [PSCustomObject]@{
-                    UniqueStaticLogPaths = @()
-                    HasConflict          = $false
-                    NoLogStepIds         = @("$($script:NoLogInfo.Path):$($script:NoLogInfo.FirstStepLine)")
-                }
-            }
-            Mock Write-StepperLog {}
-            Mock Read-Host { 'S' }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
-        }
-
-        It 'Should prompt the user when -NoLog is present on a step' {
-            New-Step -NoLog { }
-            Should -Invoke Read-Host -Scope It
-        }
-
-        It 'Should store the NoLogStepIds in execution state when user chooses S' {
-            New-Step -NoLog { }
-            $state = Import-Clixml -Path $script:NoLogInfo.StatePath
-            $state.NoLogStepIds | Should -Not -BeNullOrEmpty
         }
     }
 
@@ -751,16 +501,8 @@ Describe 'New-Step' -Tag 'Integration' {
             Remove-Item -LiteralPath $script:DisabledLogPath -Force -ErrorAction SilentlyContinue
             $stepId = "$($script:DisabledLogInfo.Path):$($script:DisabledLogInfo.FirstStepLine)"
             Mock Get-StepIdentifier { $stepId }
-            Mock Get-StepLogConfig {
-                [PSCustomObject]@{
-                    UniqueStaticLogPaths = @($script:DisabledLogPath)
-                    HasConflict          = $false
-                    NoLogStepIds         = @($stepId)
-                }
-            }
-            Mock Read-Host { 'S' }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:DisabledLogPath
+            $__StepperExecutionState.NoLogStepIds = @($stepId)
         }
 
         It 'Should write a LOGGING DISABLED BY USER marker to the log when logging is off for a step' {
@@ -782,9 +524,7 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:NamedLogPath = Join-Path $TestDrive 'named-step.log'
             Remove-Item -LiteralPath $script:NamedLogPath -Force -ErrorAction SilentlyContinue
             Mock Get-StepIdentifier { "$($script:NamedLogInfo.Path):$($script:NamedLogInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:NamedLogPath); HasConflict = $false; NoLogStepIds = @() } }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:NamedLogPath
         }
 
         It 'Should include step name in the Executing log entry' {
@@ -835,9 +575,14 @@ Describe 'New-Step' -Tag 'Integration' {
                     "$($script:SkipLogInfo.Path):$($script:SkipLogInfo.FirstStepLine + 1)"
                 }
             }
-            Mock Read-Host { 'R' }
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            # Simulate Start-Stepper having resumed: restore mode targets step 1.
+            $__StepperExecutionState = @{
+                RestoreMode    = $true
+                TargetStep     = $step1Id
+                LogPath        = $script:SkipLogPath
+                LoggingEnabled = $true
+                NoLogStepIds   = @()
+            }
         }
 
         It 'Should write a Skipping log entry to the log for a skipped step' {
@@ -1060,10 +805,8 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:RetryLogInfo = New-TestStepperScript -BaseName "retry-log-$(New-Guid)"
             $script:RetryLogPath = Join-Path $TestDrive "retry-events-$(New-Guid).log"
             Mock Get-StepIdentifier { "$($script:RetryLogInfo.Path):$($script:RetryLogInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryLogPath); HasConflict = $false; NoLogStepIds = @() } }
             Mock Start-Sleep {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:RetryLogPath
         }
 
         It 'Writes a retry event entry to the log after a failed attempt' {
@@ -1112,10 +855,8 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:RetryElapsedInfo = New-TestStepperScript -BaseName "retry-elapsed-$(New-Guid)"
             $script:RetryElapsedLogPath = Join-Path $TestDrive "retry-elapsed-$(New-Guid).log"
             Mock Get-StepIdentifier { "$($script:RetryElapsedInfo.Path):$($script:RetryElapsedInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryElapsedLogPath); HasConflict = $false; NoLogStepIds = @() } }
             Mock Start-Sleep {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:RetryElapsedLogPath
         }
 
         It 'Completion log entry reports final attempt elapsed time' {
@@ -1150,10 +891,8 @@ Describe 'New-Step' -Tag 'Integration' {
             $script:RetryTranscriptInfo = New-TestStepperScript -BaseName "retry-transcript-$(New-Guid)"
             $script:RetryTranscriptLogPath = Join-Path $TestDrive "retry-transcript-$(New-Guid).log"
             Mock Get-StepIdentifier { "$($script:RetryTranscriptInfo.Path):$($script:RetryTranscriptInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @($script:RetryTranscriptLogPath); HasConflict = $false; NoLogStepIds = @() } }
             Mock Start-Sleep {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = $script:RetryTranscriptLogPath
         }
 
         It 'Writes a PARTIAL transcript marker to the log for each failed retry attempt' {
@@ -1272,107 +1011,20 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
-    Context '-SkipRequirementsCheck parameter' {
-        It 'Should not call Repair-StepperScript when specified' {
+    Context 'Start-Stepper sentinel' {
+        It 'Throws StartStepperNotRun when the sentinel is absent' {
             $info = New-TestStepperScript
             Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
+            Remove-Variable -Name '__StepperInitialized' -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
 
-            New-Step -SkipRequirementsCheck { }
-            Should -Invoke Repair-StepperScript -Exactly 0 -Scope It
-        }
-
-        It 'Should call Repair-StepperScript when an auto-repairable issue is present' {
-            $info = New-TestStepperScript
-            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
-            Mock Test-StepperScript {
-                [PSCustomObject]@{
-                    IsValid = $false
-                    Issues  = @([PSCustomObject]@{ Code = 'MissingCbh'; Severity = 'Warning'; Message = 'x' })
-                }
+            $errors = @()
+            try {
+                New-Step { } -ErrorAction Stop
+            } catch {
+                $errors += $_
             }
-
-            New-Step { }
-            Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
-        }
-
-        It 'Should prompt before repairing when Test-StepperScript reports UninitializedStepper' {
-            $info = New-TestStepperScript
-            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
-            Mock Test-StepperScript {
-                [PSCustomObject]@{
-                    IsValid = $false
-                    Issues  = @([PSCustomObject]@{ Code = 'UninitializedStepper'; Severity = 'Error'; Message = 'x' })
-                }
-            }
-            # Answering 'Y' triggers repair + exit; the throw intercepts the exit.
-            Mock Read-Host { 'Y' }
-            Mock Repair-StepperScript { throw 'repair-intercept' }
-            Mock Write-Host {}
-
-            { New-Step { } } | Should -Throw 'repair-intercept'
-            Should -Invoke Read-Host -Exactly 1 -Scope It
-            Should -Invoke Repair-StepperScript -Exactly 1 -Scope It
-        }
-
-        It 'Should not repair when the user answers Ignore to the UninitializedStepper prompt' {
-            $info = New-TestStepperScript
-            Mock Get-StepIdentifier { "$($info.Path):$($info.FirstStepLine)" }
-            Mock Test-StepperScript {
-                [PSCustomObject]@{
-                    IsValid = $false
-                    Issues  = @([PSCustomObject]@{ Code = 'UninitializedStepper'; Severity = 'Error'; Message = 'x' })
-                }
-            }
-            Mock Read-Host { 'i' }
-            Mock Repair-StepperScript { throw 'repair-should-not-run' }
-            Mock Write-Host {}
-
-            { New-Step { } } | Should -Not -Throw 'repair-should-not-run'
-            Should -Invoke Repair-StepperScript -Exactly 0 -Scope It
-        }
-    }
-
-    Context 'ConvertTo-StepperScript first-run hook' {
-        BeforeEach {
-            $script:Info = New-TestStepperScript
-            Mock Get-StepIdentifier { "$($script:Info.Path):$($script:Info.FirstStepLine)" }
-        }
-
-        It 'Should not call ConvertTo-StepperScript when sentinel is already present' {
-            Mock Test-StepperConversionComplete { $true }
-
-            New-Step { }
-
-            Should -Invoke ConvertTo-StepperScript -Times 0 -Exactly -Scope It
-        }
-
-        It 'Should not call ConvertTo-StepperScript when no cross-step variable candidates exist' {
-            Mock Test-StepperConversionComplete { $false }
-            Mock Find-CrossStepVariables { @() }
-
-            New-Step { }
-
-            Should -Invoke ConvertTo-StepperScript -Times 0 -Exactly -Scope It
-        }
-
-        It 'Should call ConvertTo-StepperScript with correct -Path when sentinel is absent and candidates exist' {
-            Mock Test-StepperConversionComplete { $false }
-            Mock Find-CrossStepVariables { @('servers', 'count') }
-            # ConvertTo-StepperScript is already mocked (no-op); sentinel stays absent so no exit
-
-            New-Step { }
-
-            Should -Invoke ConvertTo-StepperScript -Times 1 -Exactly -Scope It -ParameterFilter {
-                $Path -eq $script:Info.Path
-            }
-        }
-
-        It 'Should not call Find-CrossStepVariables when sentinel is already present' {
-            Mock Test-StepperConversionComplete { $true }
-
-            New-Step { }
-
-            Should -Invoke Find-CrossStepVariables -Times 0 -Exactly -Scope It
+            $errors | Where-Object { $_.FullyQualifiedErrorId -like 'StartStepperNotRun*' } | Should -Not -BeNullOrEmpty
         }
     }
 }
