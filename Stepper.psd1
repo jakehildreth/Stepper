@@ -8,7 +8,7 @@
     Description='A cross-platform PowerShell utility module for creating resumable, step-by-step scripts with automatic state persistence.'
     FunctionsToExport=@('ConvertTo-StepperScript',        'New-Step',        'New-StepperScript',        'Repair-StepperScript',        'Start-Stepper',        'Stop-Stepper',        'Test-StepperScript')
     GUID='2260142f-ef07-4749-a430-a2062efefbf6'
-    ModuleVersion='2026.5.300850'
+    ModuleVersion='2026.9.41228'
     PowerShellVersion='5.1'
     PrivateData=@{
         PSData=@{
