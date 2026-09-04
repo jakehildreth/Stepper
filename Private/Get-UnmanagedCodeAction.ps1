@@ -59,14 +59,8 @@ function Get-UnmanagedCodeAction {
     Write-Host "Choice? [" -NoNewline
     Write-Host "W" -NoNewline -ForegroundColor Cyan
     Write-Host "/m/d/i/q]: " -NoNewline
-    try {
-        $choice = Read-Host
-    }
-    catch {
-        # Non-interactive context - default to Wrap (safest option)
-        $choice = 'w'
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to Wrap"
-    }
+    # Route through the testable seam; non-interactive default is Wrap (safest).
+    $choice = Read-StepperChoice -NonInteractiveDefault 'w'
 
     switch ($choice.ToLower()) {
         'w' { return 'Wrap' }

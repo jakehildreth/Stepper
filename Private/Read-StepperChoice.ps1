@@ -40,10 +40,20 @@ function Read-StepperChoice {
     }
 
     try {
-        return Read-Host
+        $result = Read-Host
     }
     catch {
         Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Non-interactive context detected, defaulting to '$NonInteractiveDefault'"
         return $NonInteractiveDefault
     }
+
+    # Read-Host returns $null when stdin is closed/empty (non-interactive spawn).
+    # Treat that as the non-interactive default rather than a blank interactive
+    # entry, so callers that distinguish '' (user pressed Enter) from $null get
+    # the safe default.
+    if ($null -eq $result) {
+        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Read-Host returned null (closed stdin), defaulting to '$NonInteractiveDefault'"
+        return $NonInteractiveDefault
+    }
+    return $result
 }

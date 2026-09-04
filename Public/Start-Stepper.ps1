@@ -126,6 +126,160 @@ function Start-Stepper {
     }
     $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
+    #Region Script-integrity checks. Each of these may REWRITE the script and
+    # then exit for a re-run (the rewrite invalidates the hash/state). They must
+    # all run BEFORE Read-StepperState. Ordered: requirements, unmanaged code,
+    # Stop-Stepper presence, ConvertTo.
+
+    # 1. Requirements check (declarations). Auto-repairs structural issues only.
+    if (-not $SkipRequirementsCheck.IsPresent) {
+        $preRepairResult = Test-StepperScript -ScriptPath $scriptPath
+        $needsRestart    = $preRepairResult.Issues |
+            Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard' }
+
+        $needsAutoRepair = $preRepairResult.Issues |
+            Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh' }
+        if ($needsAutoRepair) {
+            Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue | Out-Null
+        }
+
+        if ($needsRestart) {
+            $scriptName = Split-Path $scriptPath -Leaf
+            $added = ($needsRestart | ForEach-Object {
+                switch ($_.Code) {
+                    'MissingCmdletBinding' { '[CmdletBinding()]' }
+                    'MissingInstallGuard'  { 'Install-Module guard' }
+                }
+            }) -join ' and '
+            Write-Host ""
+            Write-Host "$added has been added to $scriptName." -ForegroundColor Green
+            Write-Host "Please re-run $scriptName." -ForegroundColor Green
+            exit
+        }
+    }
+
+    # 2. Unmanaged-code scan between New-Step blocks and before Stop-Stepper
+    try {
+        $scriptLines = Get-Content -Path $scriptPath -ErrorAction Stop
+    }
+    catch {
+        $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'ScriptReadFailed',
+            [System.Management.Automation.ErrorCategory]::ReadError,
+            $scriptPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
+
+    $blockInfo = Find-NewStepBlocks -ScriptPath $scriptPath
+    $newStepBlocks = $blockInfo.NewStepBlocks
+    $stopStepperLine = $blockInfo.StopStepperLine
+
+    $unmanagedBlocks = Find-UnmanagedCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
+
+    if ($unmanagedBlocks.Count -gt 0) {
+        $scriptName = Split-Path $scriptPath -Leaf
+        $allLinesToRemove = @{}
+
+        foreach ($block in $unmanagedBlocks) {
+            $action = Get-UnmanagedCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
+
+            if ($action -eq 'Quit') {
+                Write-Host ""
+                Write-Host "Exiting..." -ForegroundColor Yellow
+                exit
+            }
+
+            if ($action -ne 'Ignore') {
+                foreach ($line in $block.Lines) {
+                    $allLinesToRemove[$line] = @{ Action = $action; Code = $scriptLines[$line] }
+                }
+            }
+        }
+
+        if ($allLinesToRemove.Count -gt 0) {
+            Update-ScriptWithUnmanagedActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
+            exit
+        }
+    }
+
+    # 3. Stop-Stepper presence check (after unmanaged scan, before ConvertTo)
+    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
+    if ($scriptContent -notmatch 'Stop-Stepper') {
+        $scriptName = Split-Path $scriptPath -Leaf
+        Write-Host ""
+        Write-Host "[!] Script '$scriptName' does not call Stop-Stepper." -ForegroundColor Magenta
+        Write-Host ""
+        Write-Host "Stop-Stepper ensures the state file is removed when the script completes successfully."
+        Write-Host ""
+        Write-Host "How would you like to proceed?"
+        Write-Host ""
+        Write-Host "  [A] Add 'Stop-Stepper' to the end of the script (Default)" -ForegroundColor Cyan
+        Write-Host "  [c] Continue without Stop-Stepper" -ForegroundColor White
+        Write-Host "  [q] Quit" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Choice? [" -NoNewline
+        Write-Host "A" -NoNewline -ForegroundColor Cyan
+        Write-Host "/c/q]: " -NoNewline
+        $response = Read-StepperChoice -NonInteractiveDefault 'c'
+
+        if ($response -eq 'C' -or $response -eq 'c') {
+            Write-Warning "Continuing without Stop-Stepper. State file will not be cleaned up automatically."
+        }
+        elseif ($response -eq 'Q' -or $response -eq 'q') {
+            Write-Host ""
+            Write-Host "Exiting..." -ForegroundColor Yellow
+            exit
+        }
+        else {
+            # 'A'/'' or any other input: add Stop-Stepper to the end
+            $updatedContent = $scriptContent.TrimEnd()
+            if (-not $updatedContent.EndsWith("`n")) {
+                $updatedContent += "`n"
+            }
+            $updatedContent += "`nStop-Stepper`n"
+
+            try {
+                New-StepperBackup -Path $scriptPath | Out-Null
+                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
+            }
+            catch {
+                $exception = [System.IO.IOException]::new("Failed to write to script file '$scriptPath'", $_.Exception)
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'ScriptWriteFailed',
+                    [System.Management.Automation.ErrorCategory]::WriteError,
+                    $scriptPath
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
+            }
+
+            # Script modified: state is stale, delete it and exit for re-run
+            Remove-StepperState -StatePath $statePath
+            Write-Host ""
+            Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
+            exit
+        }
+    }
+
+    # 4. ConvertTo-StepperScript hook (last script-mutating check)
+    if (-not (Test-StepperConversionComplete -ScriptPath $scriptPath)) {
+        $conversionCandidates = @(Find-CrossStepVariables -ScriptPath $scriptPath)
+        if ($conversionCandidates.Count -gt 0) {
+            ConvertTo-StepperScript -Path $scriptPath
+            if (Test-StepperConversionComplete -ScriptPath $scriptPath) {
+                $scriptName = Split-Path $scriptPath -Leaf
+                Write-Host ""
+                Write-Host "Cross-step variables have been converted to `$Stepper.<Var> notation and `$StepperConversionComplete = `$true has been added to $scriptName." -ForegroundColor Green
+                Write-Host "Please re-run $scriptName." -ForegroundColor Green
+                exit
+            }
+        }
+    }
+    #EndRegion Script-integrity checks
+
     # Read any existing state file and own the resume/start-over decision.
     $existingState = Read-StepperState -StatePath $statePath
 
