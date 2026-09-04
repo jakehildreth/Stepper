@@ -126,6 +126,229 @@ function Start-Stepper {
     }
     $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
+    # Read any existing state file and own the resume/start-over decision.
+    $existingState = Read-StepperState -StatePath $statePath
+
+    if ($existingState) {
+        $inventory = Get-StepInventory -ScriptPath $scriptPath
+        $stepLines  = $inventory.StepLines
+        $stepNames  = $inventory.StepNames
+        $totalSteps = $inventory.TotalSteps
+
+        $lastStep = $existingState.LastCompletedStep
+        $lastStepIndex = $stepLines.IndexOf($lastStep)
+        $nextStepNumber = $lastStepIndex + 2  # +1 for next step, +1 because index is 0-based
+
+        $timestamp = [DateTime]::Parse($existingState.Timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+        $availableVars = if ($existingState.StepperData -and $existingState.StepperData.Count -gt 0) {
+            ($existingState.StepperData.Keys | Sort-Object) -join ', '
+        } else {
+            'None'
+        }
+
+        $scriptName = Split-Path $scriptPath -Leaf
+        $lastStepLine = ($lastStep -split ':')[-1]
+        $lastStepDisplay = if ($existingState.LastCompletedStepName) { "$($existingState.LastCompletedStepName) (Step $($lastStepIndex + 1), Line $lastStepLine)" } else { "Step $($lastStepIndex + 1) (Line $lastStepLine)" }
+
+        $hashMismatch = $existingState.ScriptHash -ne $currentHash
+
+        # Persisted $Stepper data is injected ONLY on a Resume choice, never on
+        # Start Over. Every Resume path injects (the pre-refactor hash-match
+        # top-level Resume path did not; that inconsistency is fixed here).
+        $injectStepperData = {
+            if ($existingState.StepperData) {
+                $callingScope.PSVariable.Set('Stepper', $existingState.StepperData)
+                Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Loaded `$Stepper data from disk"
+            }
+        }
+        $startFresh = {
+            Write-Host "Starting fresh..." -ForegroundColor Yellow
+            $executionState.StartFresh = $true
+            Clear-StepperSession -StatePath $statePath -CallingScope $callingScope -ExecutionState $executionState
+            # Clear-StepperSession removed $Stepper; recreate it empty so the
+            # fresh run starts with a usable, pristine hashtable.
+            $callingScope.PSVariable.Set('Stepper', @{})
+        }
+
+        if ($hashMismatch) {
+            $nextStepId = $stepLines[$lastStepIndex + 1]
+            $nextStepLine = ($nextStepId -split ':')[-1]
+            $nextStepName = $stepNames[$lastStepIndex + 1]
+            $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
+
+            while ($true) {
+                if ($executionState.StartFresh -and -not (Test-Path -LiteralPath $statePath)) { break }
+                Write-Host ""
+                Write-Host "[!] Incomplete script run detected, but $scriptName has been modified." -ForegroundColor Magenta
+                Write-Host ""
+                Write-Host "Total Steps:           $totalSteps"
+                Write-Host "Steps Completed:       $($lastStepIndex + 1)"
+                Write-Host "Last Completed Step:   $lastStepDisplay"
+                Write-Host "Variables:             $availableVars"
+                Write-Host "Last Activity:         $timestamp"
+                Write-Host ""
+                Write-Host "How would you like to proceed?"
+                Write-Host ""
+                Write-Host "  [r] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
+                Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
+                Write-Host "  [m] More details" -ForegroundColor White
+                Write-Host "  [q] Quit" -ForegroundColor White
+                Write-Host ""
+                Write-Host "Choice? [" -NoNewline
+                Write-Host "r" -NoNewline -ForegroundColor White
+                Write-Host "/S" -NoNewline -ForegroundColor Cyan
+                Write-Host "/m/q]: " -NoNewline
+                $response = Read-StepperChoice -NonInteractiveDefault 's'
+
+                if ($response -eq '' -or $response -eq 'S' -or $response -eq 's') {
+                    & $startFresh
+                    continue
+                }
+                elseif ($response -eq 'R' -or $response -eq 'r') {
+                    Write-Host ""
+                    Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+                    $executionState.RestoreMode = $true
+                    $executionState.TargetStep = $lastStep
+                    & $injectStepperData
+                    break
+                }
+                elseif ($response -eq 'M' -or $response -eq 'm') {
+                    Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber -ShowHashComparison
+                    Write-Host "  [r] Resume $scriptName from $nextStepDisplay (May produce inconsistent results)" -ForegroundColor White
+                    Write-Host "  [S] Start over (Default)" -ForegroundColor Cyan
+                    Write-Host "  [q] Quit" -ForegroundColor White
+                    Write-Host ""
+                    Write-Host "Choice? [r/S/q]: " -NoNewline
+                    $moreResponse = Read-StepperChoice -NonInteractiveDefault 's'
+                    if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
+                        & $startFresh
+                        continue
+                    }
+                    elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
+                        Write-Host ""
+                        Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
+                        & $injectStepperData
+                        break
+                    }
+                    elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
+                        Write-Host ""
+                        Write-Host "Exiting..." -ForegroundColor Yellow
+                        exit
+                    }
+                    else {
+                        & $startFresh
+                        continue
+                    }
+                }
+                elseif ($response -eq 'Q' -or $response -eq 'q') {
+                    Write-Host ""
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit
+                }
+                else {
+                    & $startFresh
+                    continue
+                }
+            }
+        }
+        else {
+            Write-Host ""
+            Write-Host "[!] Incomplete script run detected!" -ForegroundColor Magenta
+            Write-Host ""
+            Write-Host "Total Steps:           $totalSteps"
+            Write-Host "Steps Completed:       $($lastStepIndex + 1)"
+            Write-Host "Last Completed Step:   $lastStepDisplay"
+            Write-Host "Variables:             $availableVars"
+            Write-Host "Last Activity:         $timestamp"
+            Write-Host ""
+
+            if ($nextStepNumber -le $totalSteps) {
+                $nextStepId = $stepLines[$lastStepIndex + 1]
+                $nextStepLine = ($nextStepId -split ':')[-1]
+                $nextStepName = $stepNames[$lastStepIndex + 1]
+                $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
+
+                while ($true) {
+                    if ($executionState.StartFresh -and -not (Test-Path -LiteralPath $statePath)) { break }
+                    Write-Host "How would you like to proceed?"
+                    Write-Host ""
+                    Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
+                    Write-Host "  [s] Start over" -ForegroundColor White
+                    Write-Host "  [m] More details" -ForegroundColor White
+                    Write-Host "  [q] Quit" -ForegroundColor White
+                    Write-Host ""
+                    Write-Host "Choice? [" -NoNewline
+                    Write-Host "R" -NoNewline -ForegroundColor Cyan
+                    Write-Host "/s/m/q]: " -NoNewline
+                    $response = Read-StepperChoice -NonInteractiveDefault 'r'
+
+                    if ($response -eq '' -or $response -eq 'R' -or $response -eq 'r') {
+                        Write-Host ""
+                        Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
+                        & $injectStepperData
+                        break
+                    }
+                    elseif ($response -eq 'S' -or $response -eq 's') {
+                        & $startFresh
+                        continue
+                    }
+                    elseif ($response -eq 'M' -or $response -eq 'm') {
+                        Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber
+                        Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
+                        Write-Host "  [S] Start over" -ForegroundColor White
+                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host ""
+                        Write-Host "Choice? [R/s/q]: " -NoNewline
+                        $moreResponse = Read-StepperChoice -NonInteractiveDefault 'r'
+                        if ($moreResponse -eq '' -or $moreResponse -eq 'S' -or $moreResponse -eq 's') {
+                            & $startFresh
+                            continue
+                        }
+                        elseif ($moreResponse -eq 'R' -or $moreResponse -eq 'r') {
+                            Write-Host ""
+                            Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+                            $executionState.RestoreMode = $true
+                            $executionState.TargetStep = $lastStep
+                            & $injectStepperData
+                            break
+                        }
+                        elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
+                            Write-Host ""
+                            Write-Host "Exiting..." -ForegroundColor Yellow
+                            exit
+                        }
+                        else {
+                            & $startFresh
+                            continue
+                        }
+                    }
+                    elseif ($response -eq 'Q' -or $response -eq 'q') {
+                        Write-Host ""
+                        Write-Host "Exiting..." -ForegroundColor Yellow
+                        exit
+                    }
+                    else {
+                        Write-Host ""
+                        Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+                        $executionState.RestoreMode = $true
+                        $executionState.TargetStep = $lastStep
+                        & $injectStepperData
+                        break
+                    }
+                }
+            }
+            else {
+                Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow
+                & $startFresh
+            }
+            Write-Host ""
+        }
+    }
+
     # Set the sentinel New-Step requires. Done last so a partial init never
     # leaves the sentinel set.
     $callingScope.PSVariable.Set('__StepperInitialized', $true)
