@@ -21,102 +21,6 @@ BeforeAll {
 
 Describe 'Repair-StepperScript' -Tag 'Unit' {
 
-    Context 'UninitializedStepper repair' {
-        It 'Inserts the $Stepper initializer after param() when an unmanaged $Stepper assignment is uninitialised' {
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    s.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                '$Stepper.Name = Read-Host "Name?"'
-                'New-Step { Write-Host $Stepper.Name }'
-                'Stop-Stepper'
-            )
-            try {
-                Repair-StepperScript -ScriptPath $path | Out-Null
-                $result = Get-Content -Path $path -Raw
-                $result | Should -Match 'if \(\$null -eq \$Stepper\)'
-                # Initializer must come after param() and before the assignment
-                $initIndex   = $result.IndexOf('if ($null -eq $Stepper)')
-                $paramIndex  = $result.IndexOf('param()')
-                $assignIndex = $result.IndexOf('$Stepper.Name')
-                $initIndex | Should -BeGreaterThan $paramIndex
-                $initIndex | Should -BeLessThan $assignIndex
-                # Script must still parse
-                $errors = $null
-                [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors) | Out-Null
-                $errors | Should -HaveCount 0
-            }
-            finally {
-                Remove-Item $path -ErrorAction SilentlyContinue
-                Get-ChildItem (Split-Path $path) -Filter "$( [System.IO.Path]::GetFileNameWithoutExtension($path) ).*.ps1.bak" | Remove-Item -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It 'Clears the UninitializedStepper issue after repair' {
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    s.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                '$Stepper.Name = Read-Host "Name?"'
-                'New-Step { Write-Host $Stepper.Name }'
-                'Stop-Stepper'
-            )
-            try {
-                $after = Repair-StepperScript -ScriptPath $path
-                $after.Issues | Where-Object Code -EQ 'UninitializedStepper' | Should -BeNullOrEmpty
-            }
-            finally {
-                Remove-Item $path -ErrorAction SilentlyContinue
-                Get-ChildItem (Split-Path $path) -Filter "$( [System.IO.Path]::GetFileNameWithoutExtension($path) ).*.ps1.bak" | Remove-Item -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        It 'Places the initializer inside a Stepper ignore region so the scanner does not flag it' {
-            # Regression: an initializer left in unmanaged code is detected as a new
-            # unmanaged-code block on the next run, prompting wrap/delete/ignore.
-            # Fixture mirrors a real converted script: the unmanaged $Stepper.Name
-            # assignment lives inside its own ignore region, so after repair the only
-            # ignored pre-step lines are the regions themselves.
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    s.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                '#region Stepper ignore'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                '#endregion Stepper ignore'
-                '#region Stepper ignore'
-                '$Stepper.Name = Read-Host "Name?"'
-                '#endregion Stepper ignore'
-                'New-Step { Write-Host $Stepper.Name }'
-                'Stop-Stepper'
-            )
-            try {
-                Repair-StepperScript -ScriptPath $path | Out-Null
-                $lines = Get-Content -Path $path
-                $blocks = Find-NewStepBlocks -ScriptPath $path
-                $unmanaged = Find-UnmanagedCodeBlocks -ScriptLines $lines -NewStepBlocks $blocks.NewStepBlocks -StopStepperLine $blocks.StopStepperLine
-                $flaggedLines = @($unmanaged | ForEach-Object { $_.Lines })
-                $initLineIndex = ($lines | Select-String 'if \(\$null -eq \$Stepper\)').LineNumber - 1
-                $flaggedLines | Should -Not -Contain $initLineIndex
-            }
-            finally {
-                Remove-Item $path -ErrorAction SilentlyContinue
-                Get-ChildItem (Split-Path $path) -Filter "$( [System.IO.Path]::GetFileNameWithoutExtension($path) ).*.ps1.bak" | Remove-Item -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-
     Context 'Return value' {
         It 'Should accept -Path as an alias for -ScriptPath' {
             # Arrange
@@ -286,6 +190,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
                 'param()'
                 '#region Stepper ignore'
                 'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
                 '#endregion Stepper ignore'
                 'New-Step { Write-Host "step 1" }'
                 'Stop-Stepper'
@@ -367,6 +272,59 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
             }
             finally {
                 Remove-Item $absPath -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+Describe 'MissingStartStepper repair' -Tag 'Unit' {
+    Context 'Insertion' {
+        It 'Inserts Start-Stepper inside the first Stepper ignore region' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            try {
+                Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+                $content = Get-Content $path -Raw
+                # Start-Stepper inserted after the guard line, before #endregion
+                $content | Should -Match 'Start-Stepper'
+                $content | Should -Match 'Install-Module Stepper[^\n]*\nStart-Stepper\n#endregion'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Produces a script with no MissingStartStepper issue after repair' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            try {
+                $result = Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue
+                $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
             }
         }
     }
