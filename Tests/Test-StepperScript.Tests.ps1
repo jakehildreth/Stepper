@@ -14,7 +14,9 @@ BeforeAll {
         return $path
     }
 
-    # A fully valid Stepper script (passes all checks)
+    # A fully valid Stepper script (passes all checks). Start-Stepper is required
+    # whenever New-Step is present, so the valid script includes it inside the
+    # ignore region, after the install guard.
     $ValidScript = @(
         '<#'
         '.SYNOPSIS'
@@ -26,6 +28,7 @@ BeforeAll {
         'param()'
         '#region Stepper ignore'
         'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+        'Start-Stepper'
         '#endregion Stepper ignore'
         'New-Step { Write-Host "step 1" }'
         'Stop-Stepper'
@@ -541,6 +544,64 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             finally {
                 Remove-Item $absPath -ErrorAction SilentlyContinue
             }
+        }
+    }
+}
+
+Describe 'MissingStartStepper rule' -Tag 'Unit' {
+    Context 'Detection' {
+        It 'Flags a script with New-Step but no Start-Stepper as an Error' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            $result = Test-StepperScript -ScriptPath $path
+            $issue = $result.Issues | Where-Object Code -EQ 'MissingStartStepper'
+            $issue | Should -Not -BeNullOrEmpty
+            $issue.Severity | Should -Be 'Error'
+            $result.IsValid | Should -BeFalse
+        }
+
+        It 'Does not flag a script that has Start-Stepper' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            $result = Test-StepperScript -ScriptPath $path
+            $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
+        }
+
+        It 'Does not flag a script with no New-Step calls' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                'Write-Host "no steps here"'
+            )
+            $result = Test-StepperScript -ScriptPath $path
+            $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
         }
     }
 }

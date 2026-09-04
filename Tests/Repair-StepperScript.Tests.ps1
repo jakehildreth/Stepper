@@ -286,6 +286,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
                 'param()'
                 '#region Stepper ignore'
                 'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
                 '#endregion Stepper ignore'
                 'New-Step { Write-Host "step 1" }'
                 'Stop-Stepper'
@@ -367,6 +368,59 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
             }
             finally {
                 Remove-Item $absPath -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+Describe 'MissingStartStepper repair' -Tag 'Unit' {
+    Context 'Insertion' {
+        It 'Inserts Start-Stepper inside the first Stepper ignore region' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            try {
+                Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+                $content = Get-Content $path -Raw
+                # Start-Stepper inserted after the guard line, before #endregion
+                $content | Should -Match 'Start-Stepper'
+                $content | Should -Match 'Install-Module Stepper[^\n]*\nStart-Stepper\n#endregion'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Produces a script with no MissingStartStepper issue after repair' {
+            $path = New-TempScript @(
+                '<#'
+                '.SYNOPSIS'
+                '    s.'
+                '#>'
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "x" }'
+                'Stop-Stepper'
+            )
+            try {
+                $result = Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue
+                $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
             }
         }
     }

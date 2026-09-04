@@ -64,6 +64,18 @@ function Test-StepperScript {
             -Message "Install-Module Stepper guard is missing. Add it so the script self-installs Stepper when needed."))
     }
 
+    # --- Error: MissingStartStepper ---
+    # Start-Stepper owns all initialization and sets the sentinel New-Step
+    # requires. A script with New-Step calls but no Start-Stepper fails at the
+    # first New-Step. (A script with no New-Step calls does not need it.)
+    $blocks = Find-NewStepBlocks -ScriptPath $ScriptPath
+    $hasStartStepper = $scriptLines | Where-Object { $_ -match '\b(Start-Stepper|Initialize-Stepper)\b' }
+
+    if ($blocks.NewStepBlocks.Count -gt 0 -and -not $hasStartStepper) {
+        $issues.Add((New-StepperIssue -Code 'MissingStartStepper' -Severity 'Error' `
+            -Message "Start-Stepper is missing. Add 'Start-Stepper' inside the first '#region Stepper ignore' block, after the Install-Module guard, before any New-Step call."))
+    }
+
     # --- Warning: MissingCbh ---
     $hasCbh = $scriptRaw -match '(?s)<#.*?\.SYNOPSIS.*?#>'
 
@@ -73,8 +85,6 @@ function Test-StepperScript {
     }
 
     # --- Warning: MissingStopStepper / NoSteps ---
-    $blocks = Find-NewStepBlocks -ScriptPath $ScriptPath
-
     if ($blocks.NewStepBlocks.Count -eq 0) {
         $issues.Add((New-StepperIssue -Code 'NoSteps' -Severity 'Warning' `
             -Message "No New-Step blocks found. Stepper scripts should contain at least one New-Step { ... } call."))

@@ -2,6 +2,9 @@ BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
     $env:STEPPER_SHOW_LOGO = 'false'
     Import-Module "$ModulePath/Stepper.psd1" -Force
+    # Capture the exact module instance this file loaded; Get-Module Stepper can
+    # return multiple instances when the full suite runs several test files.
+    $script:StepperModule = @(Get-Module Stepper) | Select-Object -First 1
 
     # Every fixture must satisfy the requirements check that Start-Stepper now
     # runs: [CmdletBinding()], param(), and the Install-Module guard. Without the
@@ -62,7 +65,7 @@ BeforeAll {
     # when the child script runs.
     function Set-StepperTestResponses {
         param([string[]]$Responses = @())
-        & (Get-Module Stepper) {
+        & $script:StepperModule {
             param($resp)
             $script:__StepperTestResponses = [System.Collections.Generic.Queue[string]]::new()
             foreach ($r in $resp) { $script:__StepperTestResponses.Enqueue($r) }
@@ -70,7 +73,7 @@ BeforeAll {
     }
 
     function Clear-StepperTestResponses {
-        & (Get-Module Stepper) {
+        & $script:StepperModule {
             Remove-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
         }
     }

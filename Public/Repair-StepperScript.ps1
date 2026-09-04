@@ -41,7 +41,7 @@ function Repair-StepperScript {
     $initialResult = Test-StepperScript -ScriptPath $ScriptPath
 
     $needsFix = $initialResult.Issues | Where-Object {
-        $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh', 'UninitializedStepper'
+        $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh', 'UninitializedStepper', 'MissingStartStepper'
     }
 
     if ($needsFix -and $PSCmdlet.ShouldProcess($ScriptPath, 'Repair Stepper script requirements')) {
@@ -49,6 +49,21 @@ function Repair-StepperScript {
         $hasMissingCmdlet     = $needsFix | Where-Object Code -EQ 'MissingCmdletBinding'
         $hasMissingGuard      = $needsFix | Where-Object Code -EQ 'MissingInstallGuard'
         $hasUninitStepper     = $needsFix | Where-Object Code -EQ 'UninitializedStepper'
+        $hasMissingStart      = $needsFix | Where-Object Code -EQ 'MissingStartStepper'
+
+        if ($hasMissingStart) {
+            # Insert 'Start-Stepper' inside the first '#region Stepper ignore'
+            # block (before its #endregion), so the unmanaged-code scanner does
+            # not flag it. Get-StepperInitInsertionIndex returns that index.
+            $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop
+            $insertIndex = Get-StepperInitInsertionIndex -ScriptPath $ScriptPath
+            $newLines = @()
+            for ($i = 0; $i -lt $insertIndex; $i++) { $newLines += $scriptLines[$i] }
+            $newLines += 'Start-Stepper'
+            for ($i = $insertIndex; $i -lt $scriptLines.Count; $i++) { $newLines += $scriptLines[$i] }
+            New-StepperBackup -Path $ScriptPath | Out-Null
+            $newLines | Set-Content -Path $ScriptPath -Force -ErrorAction Stop
+        }
 
         if ($hasUninitStepper) {
             $scriptLines = Get-Content -Path $ScriptPath -ErrorAction Stop

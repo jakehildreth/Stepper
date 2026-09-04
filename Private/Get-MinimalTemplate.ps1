@@ -16,6 +16,7 @@ param()
 
 #region Stepper ignore
 if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }
+Start-Stepper
 #endregion Stepper ignore
 
 New-Step {
