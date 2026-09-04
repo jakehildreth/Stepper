@@ -349,6 +349,108 @@ function Start-Stepper {
         }
     }
 
+    #Region Log config: runs AFTER the resume decision so it sees the real
+    # StartFresh flag. Resume restores from state; fresh/Start-Over resolves anew.
+    if ($existingState -and $existingState.LogPath -and -not $executionState.StartFresh) {
+        # Resumed run: restore log config from state, no prompts
+        $executionState.LogPath        = $existingState.LogPath
+        $executionState.LoggingEnabled = $existingState.LoggingEnabled
+        $executionState.NoLogStepIds   = if ($existingState.NoLogStepIds) { @($existingState.NoLogStepIds) } else { @() }
+    }
+    else {
+        # Fresh run (or Start Over): scan AST and resolve
+        $logConfig  = Get-StepLogConfig -ScriptPath $scriptPath
+        $scriptDir  = Split-Path -Path $scriptPath -Parent
+        $scriptName = Split-Path -Path $scriptPath -Leaf
+        $defaultLog = Join-Path -Path $scriptDir -ChildPath "$scriptName.stepper.log"
+
+        # Resolve log path
+        if ($logConfig.HasConflict) {
+            Write-Host ""
+            Write-Host "[i] Multiple -LogPath values found across New-Step calls:" -ForegroundColor Cyan
+            Write-Host ""
+            $pathChoices = $logConfig.UniqueStaticLogPaths
+            for ($pi = 0; $pi -lt $pathChoices.Count; $pi++) {
+                Write-Host "  [$($pi + 1)] $($pathChoices[$pi])" -ForegroundColor White
+            }
+            Write-Host ""
+            Write-Host "Which log path should be used? [1-$($pathChoices.Count)] (default: 1): " -NoNewline
+            $pathChoice = Read-StepperChoice -NonInteractiveDefault '1'
+            $choiceIndex = 0
+            if (-not [int]::TryParse($pathChoice, [ref]$choiceIndex) -or
+                $choiceIndex -lt 1 -or $choiceIndex -gt $pathChoices.Count) {
+                $choiceIndex = 1
+            }
+            $resolvedLogPath = $pathChoices[$choiceIndex - 1]
+        }
+        elseif ($logConfig.UniqueStaticLogPaths.Count -eq 1) {
+            $resolvedLogPath = $logConfig.UniqueStaticLogPaths[0]
+        }
+        else {
+            $resolvedLogPath = $defaultLog
+        }
+
+        # Validate parent directory
+        $logDir = Split-Path -Path $resolvedLogPath -Parent
+        if ($logDir -and -not (Test-Path -LiteralPath $logDir -PathType Container)) {
+            $exception = [System.IO.DirectoryNotFoundException]::new(
+                "Log file directory does not exist: '$logDir'. Create the directory or omit -LogPath to use the default location.")
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'LogPathDirectoryNotFound',
+                [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
+                $resolvedLogPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+
+        # Resolve NoLog scope
+        $loggingEnabled = $true
+        $noLogIds       = @()
+
+        if ($logConfig.NoLogStepIds.Count -gt 0) {
+            $noLogList = ($logConfig.NoLogStepIds | ForEach-Object {
+                $parts = $_ -split ':'
+                "$([System.IO.Path]::GetFileName($parts[0])):$($parts[-1])"
+            }) -join ', '
+
+            Write-Host ""
+            Write-Host "[i] Some steps have -NoLog specified: $noLogList" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  [A] Log all steps, ignore -NoLog flags (Default)" -ForegroundColor Cyan
+            Write-Host "  [s] Skip logging for those steps only" -ForegroundColor White
+            Write-Host "  [d] Disable logging entirely" -ForegroundColor White
+            Write-Host "  [q] Quit" -ForegroundColor White
+            Write-Host ""
+            Write-Host "Choice? [" -NoNewline
+            Write-Host "A" -NoNewline -ForegroundColor Cyan
+            Write-Host "/s/d/q]: " -NoNewline
+            $noLogChoice = Read-StepperChoice -NonInteractiveDefault 'a'
+
+            switch ($noLogChoice.ToLower()) {
+                's' {
+                    $noLogIds = @($logConfig.NoLogStepIds)
+                }
+                'd' {
+                    $loggingEnabled = $false
+                }
+                'q' {
+                    Write-Host ""
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit
+                }
+                default {
+                    # 'a' or anything else: log everything
+                }
+            }
+        }
+
+        $executionState.LogPath        = $resolvedLogPath
+        $executionState.LoggingEnabled = $loggingEnabled
+        $executionState.NoLogStepIds   = $noLogIds
+    }
+    #EndRegion Log config
+
     # Set the sentinel New-Step requires. Done last so a partial init never
     # leaves the sentinel set.
     $callingScope.PSVariable.Set('__StepperInitialized', $true)

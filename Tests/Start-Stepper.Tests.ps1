@@ -202,3 +202,82 @@ Describe 'Start-Stepper resume and pristine start' -Tag 'Integration' {
         }
     }
 }
+
+Describe 'Start-Stepper log config' -Tag 'Integration' {
+    AfterEach { Clear-StepperTestResponses }
+
+    Context 'Resume restores log config from state' {
+        It 'Restores persisted LogPath silently on resume (no AST resolution prompt)' {
+            $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "logres-$(New-Guid).ps1"))
+            $observedPath = "$scriptPath.observed.clixml"
+            $priorLog = Join-Path $TestDrive 'prior.log'
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                'Start-Stepper'
+                'New-Step { }'
+                'New-Step { }'
+                "`$o = [PSCustomObject]@{ LogPath = `$__StepperExecutionState.LogPath }"
+                "`$o | Export-Clixml -Path '$observedPath'"
+                'Stop-Stepper'
+            )
+            Write-PriorState -ScriptPath $scriptPath -StepperData @{ X = 1 } -LogPath $priorLog | Out-Null
+            Set-StepperTestResponses -Responses @('r')
+
+            & $scriptPath
+
+            $observed = Import-Clixml -Path $observedPath
+            $observed.LogPath | Should -Be $priorLog
+        }
+    }
+
+    Context 'Start Over does not inherit old log config' {
+        It 'Resolves log config fresh after Start Over instead of restoring the stale path' {
+            $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "logfresh-$(New-Guid).ps1"))
+            $observedPath = "$scriptPath.observed.clixml"
+            $staleLog = Join-Path $TestDrive 'stale.log'
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                'Start-Stepper'
+                'New-Step { }'
+                'New-Step { }'
+                "`$o = [PSCustomObject]@{ LogPath = `$__StepperExecutionState.LogPath }"
+                "`$o | Export-Clixml -Path '$observedPath'"
+                'Stop-Stepper'
+            )
+            Write-PriorState -ScriptPath $scriptPath -StepperData @{ X = 1 } -LogPath $staleLog | Out-Null
+            Set-StepperTestResponses -Responses @('s')
+
+            & $scriptPath
+
+            $observed = Import-Clixml -Path $observedPath
+            # Start Over must NOT carry the stale log path forward; the fixture has
+            # no -LogPath on any step, so it resolves to the default beside the script.
+            $observed.LogPath | Should -Not -Be $staleLog
+            $observed.LogPath | Should -Be "$scriptPath.stepper.log"
+        }
+    }
+
+    Context 'Fresh run resolves from AST' {
+        It 'Uses the single static -LogPath declared on a step' {
+            $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "logdecl-$(New-Guid).ps1"))
+            $observedPath = "$scriptPath.observed.clixml"
+            $declared = Join-Path $TestDrive 'declared.log'
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                'Start-Stepper'
+                "New-Step -LogPath '$declared' { }"
+                "`$o = [PSCustomObject]@{ LogPath = `$__StepperExecutionState.LogPath }"
+                "`$o | Export-Clixml -Path '$observedPath'"
+                'Stop-Stepper'
+            )
+
+            & $scriptPath
+
+            $observed = Import-Clixml -Path $observedPath
+            $observed.LogPath | Should -Be $declared
+        }
+    }
+}
