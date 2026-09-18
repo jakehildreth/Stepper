@@ -309,9 +309,6 @@ function Get-StepperScriptFindings {
         foreach ($entry in $afterStop) {
             $issues.Add((New-StepperIssue -Code 'ExecutableCodeAfterStop' -Extent $entry.Statement.Extent))
         }
-        if ($afterStop.Count -gt 0 -or @($newStepCalls | Where-Object { $_.Extent.StartOffset -gt $stop.Extent.StartOffset }).Count -gt 0) {
-            $issues.Add((New-StepperIssue -Code 'MisplacedStopStepper' -Extent $stop.Extent))
-        }
     }
 
     if (-not $regionMalformed) {

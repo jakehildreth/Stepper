@@ -111,7 +111,7 @@ Returns a `PSCustomObject` with:
 
 Error codes:
 
-`NotStepperScript`, `ParseError`, `MissingParamBlock`, `MissingCmdletBinding`, `MissingInstallGuard`, `InvalidInstallGuard`, `MisplacedInstallGuard`, `MissingBootstrapRegion`, `MalformedIgnoreRegion`, `MissingStartStepper`, `DuplicateStartStepper`, `NestedStartStepper`, `StartOutsideBootstrapRegion`, `StartBeforeInstallGuard`, `StartAfterExecutableCode`, `NoSteps`, `NestedNewStep`, `MissingStepScriptBlock`, `NewStepBeforeStart`, `NewStepAfterStop`, `DuplicateStopStepper`, `NestedStopStepper`, `MisplacedStopStepper`, `ExecutableCodeAfterStop`, and `UnmanagedCode`.
+`NotStepperScript`, `ParseError`, `MissingParamBlock`, `MissingCmdletBinding`, `MissingInstallGuard`, `InvalidInstallGuard`, `MisplacedInstallGuard`, `MissingBootstrapRegion`, `MalformedIgnoreRegion`, `MissingStartStepper`, `DuplicateStartStepper`, `NestedStartStepper`, `StartOutsideBootstrapRegion`, `StartBeforeInstallGuard`, `StartAfterExecutableCode`, `NoSteps`, `NestedNewStep`, `MissingStepScriptBlock`, `NewStepBeforeStart`, `NewStepAfterStop`, `DuplicateStopStepper`, `NestedStopStepper`, `ExecutableCodeAfterStop`, and `UnmanagedCode`.
 
 Warning codes:
 

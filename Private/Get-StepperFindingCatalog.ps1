@@ -26,7 +26,6 @@ function Get-StepperFindingCatalog {
             @('NewStepAfterStop', 'Error', 'None', 'New-Step cannot appear after Stop-Stepper.'),
             @('DuplicateStopStepper', 'Error', 'None', 'More than one Stop-Stepper call was found.'),
             @('NestedStopStepper', 'Error', 'None', 'Stop-Stepper must be a direct root statement.'),
-            @('MisplacedStopStepper', 'Error', 'None', 'Stop-Stepper must appear after all steps and unmanaged code.'),
             @('ExecutableCodeAfterStop', 'Error', 'None', 'Executable user code cannot appear after Stop-Stepper.'),
             @('UnmanagedCode', 'Error', 'Interactive', 'Executable user code exists outside New-Step blocks and Stepper-ignore regions.'),
             @('MissingCbh', 'Warning', 'None', 'The script does not contain comment-based help with a .SYNOPSIS section.'),

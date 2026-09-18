@@ -503,7 +503,7 @@ Describe 'Canonical Stepper finding catalog' -Tag 'Unit' {
             'StartBeforeInstallGuard', 'StartAfterExecutableCode', 'NoSteps',
             'NestedNewStep', 'MissingStepScriptBlock', 'NewStepBeforeStart',
             'NewStepAfterStop', 'DuplicateStopStepper', 'NestedStopStepper',
-            'MisplacedStopStepper', 'ExecutableCodeAfterStop', 'UnmanagedCode',
+            'ExecutableCodeAfterStop', 'UnmanagedCode',
             'MissingCbh', 'MissingStopStepper'
         )
         $catalog = Get-StepperFindingCatalog
@@ -592,7 +592,7 @@ Describe 'Canonical structural findings' -Tag 'Unit' {
         finally { Remove-Item $path -ErrorAction SilentlyContinue }
     }
 
-    It 'Detects New-Step and executable code after Stop without duplicate unmanaged findings' {
+    It 'Reports only specific findings for New-Step and executable code after Stop' {
         $path = New-TempScript @(
             '[CmdletBinding()]', 'param()', '#region Stepper ignore',
             'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
@@ -601,10 +601,25 @@ Describe 'Canonical structural findings' -Tag 'Unit' {
         )
         try {
             $result = Test-StepperScript $path
-            $result.Issues.Code | Should -Contain 'NewStepAfterStop'
-            $result.Issues.Code | Should -Contain 'ExecutableCodeAfterStop'
-            $result.Issues.Code | Should -Contain 'MisplacedStopStepper'
+            @($result.Issues | Where-Object Code -EQ 'NewStepAfterStop') | Should -HaveCount 1
+            @($result.Issues | Where-Object Code -EQ 'ExecutableCodeAfterStop') | Should -HaveCount 1
+            $result.Issues.Code | Should -Not -Contain 'MisplacedStopStepper'
             @($result.Issues | Where-Object Code -EQ 'UnmanagedCode') | Should -HaveCount 0
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Reports one ordering finding when New-Step follows Stop-Stepper' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'New-Step { }', 'Stop-Stepper', 'New-Step { }'
+        )
+        try {
+            $orderingIssues = @((Test-StepperScript $path).Issues | Where-Object Code -In 'NewStepAfterStop', 'MisplacedStopStepper')
+            $orderingIssues | Should -HaveCount 1
+            $orderingIssues[0].Code | Should -Be 'NewStepAfterStop'
         }
         finally { Remove-Item $path -ErrorAction SilentlyContinue }
     }
