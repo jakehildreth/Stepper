@@ -7,8 +7,7 @@
             "command": "bd prime",
             "type": "command"
           }
-        ],
-        "matcher": ""
+        ]
       }
     ],
     "SessionStart": [
@@ -18,8 +17,7 @@
             "command": "bd prime",
             "type": "command"
           }
-        ],
-        "matcher": ""
+        ]
       }
     ]
   }
