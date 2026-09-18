@@ -463,8 +463,8 @@ function Start-Stepper {
                     elseif ($response -eq 'M' -or $response -eq 'm') {
                         Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber
                         Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
-                        Write-Host "  [S] Start over" -ForegroundColor White
-                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host "  [s] Start over" -ForegroundColor White
+                        Write-Host "  [q] Quit" -ForegroundColor White
                         Write-Host ""
                         Write-Host "Choice? [R/s/q]: " -NoNewline
                         $moreResponse = Read-StepperChoice -NonInteractiveDefault 'r'

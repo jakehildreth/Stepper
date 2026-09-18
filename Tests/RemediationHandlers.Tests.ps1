@@ -115,6 +115,31 @@ Describe 'Stepper remediation handlers' -Tag 'Unit' {
             (Get-Content -LiteralPath $path -Raw) | Should -BeExactly $before
         }
 
+        It 'Shows the default lifecycle choice uppercase and restores the Choice prompt' {
+            $path = New-RemediationScript @(
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                '#endregion Stepper ignore'
+                'Start-Stepper'
+                'New-Step { "step" }'
+                'Stop-Stepper'
+            )
+            $testResult = Test-StepperScript -ScriptPath $path
+            Set-RemediationResponses 'c'
+            Mock Write-Host
+
+            Invoke-StepperLifecycleRemediation -ScriptPath $path -Issues $testResult.Issues | Out-Null
+
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [M] Move the existing call (Default)' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [c] Continue for this invocation only' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [q] Quit' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'Choice? [' -and $NoNewline } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'M' -and $NoNewline -and $ForegroundColor -eq 'Cyan' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '/c/q]: ' -and $NoNewline } -Exactly 1 -Scope It
+        }
+
         It 'Keeps the canonical call and removes all duplicates in one rewrite' {
             $path = New-RemediationScript @(
                 '[CmdletBinding()]'
@@ -277,6 +302,33 @@ Describe 'Stepper remediation handlers' -Tag 'Unit' {
             $result.Changed | Should -BeFalse
             $result.HandledIssues.Code | Should -Not -Contain 'NoSteps'
         }
+
+        It 'Shows the default unmanaged-code choice uppercase and restores the Choice prompt' {
+            $path = New-RemediationScript @(
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                'Write-Host "still unmanaged"'
+                'Stop-Stepper'
+            )
+            $testResult = Test-StepperScript -ScriptPath $path
+            Set-RemediationResponses 'i'
+            Mock Write-Host
+
+            Invoke-StepperUnmanagedCodeRemediation -ScriptPath $path -Issues $testResult.Issues | Out-Null
+
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [W] Wrap in an unnamed New-Step (Default)' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [m] Mark ignored' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [d] Delete' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [i] Ignore for this invocation only' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [q] Quit without applying any decisions' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'Choice? [' -and $NoNewline } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'W' -and $NoNewline -and $ForegroundColor -eq 'Cyan' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '/m/d/i/q]: ' -and $NoNewline } -Exactly 1 -Scope It
+        }
     }
 
     Context 'Missing Stop remediation' {
@@ -315,6 +367,22 @@ Describe 'Stepper remediation handlers' -Tag 'Unit' {
             $result.Disposition | Should -Be 'Continue'
             $result.Changed | Should -BeFalse
             (Get-Content -LiteralPath $path -Raw) | Should -BeExactly $before
+        }
+
+        It 'Shows the default missing-Stop choice uppercase and restores the Choice prompt' {
+            $path = New-RemediationScript @('New-Step { "step" }')
+            $issue = New-StepperIssue -Code MissingStopStepper
+            Mock Read-StepperChoice { 'c' }
+            Mock Write-Host
+
+            Invoke-StepperMissingStopRemediation -ScriptPath $path -Issues @($issue) -WarningAction SilentlyContinue | Out-Null
+
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [A] Add Stop-Stepper (Default)' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [c] Continue for this invocation only' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '  [q] Quit' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'Choice? [' -and $NoNewline } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'A' -and $NoNewline -and $ForegroundColor -eq 'Cyan' } -Exactly 1 -Scope It
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '/c/q]: ' -and $NoNewline } -Exactly 1 -Scope It
         }
     }
 }

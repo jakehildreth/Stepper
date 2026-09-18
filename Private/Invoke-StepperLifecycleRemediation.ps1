@@ -117,8 +117,17 @@ function Invoke-StepperLifecycleRemediation {
         if (-not $destinationUnavailable) {
             Write-Host '  [M] Move the existing call (Default)' -ForegroundColor Cyan
         }
-        Write-Host '  [C] Continue for this invocation only' -ForegroundColor White
-        Write-Host '  [Q] Quit' -ForegroundColor White
+        Write-Host '  [c] Continue for this invocation only' -ForegroundColor White
+        Write-Host '  [q] Quit' -ForegroundColor White
+        Write-Host ''
+        Write-Host 'Choice? [' -NoNewline
+        if (-not $destinationUnavailable) {
+            Write-Host 'M' -NoNewline -ForegroundColor Cyan
+            Write-Host '/c/q]: ' -NoNewline
+        }
+        else {
+            Write-Host 'c/q]: ' -NoNewline
+        }
         $choice = Read-StepperChoice -NonInteractiveDefault $nonInteractive
 
         if ($choice -eq $nonInteractive) {
@@ -182,6 +191,9 @@ function Invoke-StepperLifecycleRemediation {
         })
 
         if ($destinationUnavailable) {
+            Write-Host '  [q] Quit' -ForegroundColor White
+            Write-Host ''
+            Write-Host 'Choice? [q]: ' -NoNewline
             $choice = Read-StepperChoice -NonInteractiveDefault $nonInteractive
             if ($choice -eq $nonInteractive) {
                 $exception = [System.InvalidOperationException]::new(
@@ -201,7 +213,12 @@ function Invoke-StepperLifecycleRemediation {
 
         if ($canonicalCalls.Count -eq 1) {
             $keeper = $canonicalCalls[0]
-            Write-Host ("Keep line {0} and remove every other lifecycle call? [R/q]" -f $keeper.Extent.StartLineNumber)
+            Write-Host ("  [R] Keep line {0} and remove every other lifecycle call (Default)" -f $keeper.Extent.StartLineNumber) -ForegroundColor Cyan
+            Write-Host '  [q] Quit' -ForegroundColor White
+            Write-Host ''
+            Write-Host 'Choice? [' -NoNewline
+            Write-Host 'R' -NoNewline -ForegroundColor Cyan
+            Write-Host '/q]: ' -NoNewline
             $choice = Read-StepperChoice -NonInteractiveDefault $nonInteractive
             if ($choice -eq $nonInteractive) {
                 $exception = [System.InvalidOperationException]::new(
@@ -229,7 +246,9 @@ function Invoke-StepperLifecycleRemediation {
             for ($index = 0; $index -lt $commands.Count; $index++) {
                 Write-Host ("  [{0}] Keep {1}" -f ($index + 1), $commands[$index].Extent.Text.Trim()) -ForegroundColor White
             }
-            Write-Host '  [Q] Quit' -ForegroundColor White
+            Write-Host '  [q] Quit' -ForegroundColor White
+            Write-Host ''
+            Write-Host ("Choice? [1-{0}/q]: " -f $commands.Count) -NoNewline
             $choice = Read-StepperChoice -NonInteractiveDefault $nonInteractive
             if ($choice -eq $nonInteractive) {
                 $exception = [System.InvalidOperationException]::new(

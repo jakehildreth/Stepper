@@ -22,8 +22,12 @@ function Invoke-StepperMissingStopRemediation {
     Write-Host 'Stop-Stepper removes state after a successful run.'
     Write-Host ''
     Write-Host '  [A] Add Stop-Stepper (Default)' -ForegroundColor Cyan
-    Write-Host '  [C] Continue for this invocation only' -ForegroundColor White
-    Write-Host '  [Q] Quit' -ForegroundColor White
+    Write-Host '  [c] Continue for this invocation only' -ForegroundColor White
+    Write-Host '  [q] Quit' -ForegroundColor White
+    Write-Host ''
+    Write-Host 'Choice? [' -NoNewline
+    Write-Host 'A' -NoNewline -ForegroundColor Cyan
+    Write-Host '/c/q]: ' -NoNewline
 
     $choice = Read-StepperChoice -NonInteractiveDefault 'c'
     $choice = if ($null -eq $choice) { '' } else { $choice.Trim().ToLowerInvariant() }

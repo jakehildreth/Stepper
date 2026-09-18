@@ -49,10 +49,14 @@ function Invoke-StepperUnmanagedCodeRemediation {
         Write-Host $location.Text -ForegroundColor Gray
         Write-Host ''
         Write-Host '  [W] Wrap in an unnamed New-Step (Default)' -ForegroundColor Cyan
-        Write-Host '  [M] Mark ignored' -ForegroundColor White
-        Write-Host '  [D] Delete' -ForegroundColor White
-        Write-Host '  [I] Ignore for this invocation only' -ForegroundColor White
-        Write-Host '  [Q] Quit without applying any decisions' -ForegroundColor White
+        Write-Host '  [m] Mark ignored' -ForegroundColor White
+        Write-Host '  [d] Delete' -ForegroundColor White
+        Write-Host '  [i] Ignore for this invocation only' -ForegroundColor White
+        Write-Host '  [q] Quit without applying any decisions' -ForegroundColor White
+        Write-Host ''
+        Write-Host 'Choice? [' -NoNewline
+        Write-Host 'W' -NoNewline -ForegroundColor Cyan
+        Write-Host '/m/d/i/q]: ' -NoNewline
 
         $choice = Read-StepperChoice -NonInteractiveDefault 'w'
         $choice = if ($null -eq $choice) { '' } else { $choice.Trim().ToLowerInvariant() }
