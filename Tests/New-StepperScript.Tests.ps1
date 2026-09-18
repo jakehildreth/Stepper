@@ -6,7 +6,6 @@ BeforeAll {
     . "$ModulePath/Private/Get-StepperFindingCatalog.ps1"
     . "$ModulePath/Private/New-StepperIssue.ps1"
     . "$ModulePath/Private/Get-StepperScriptFindings.ps1"
-    . "$ModulePath/Private/Add-StepperCbh.ps1"
     . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Get-MinimalTemplate.ps1"
     . "$ModulePath/Private/Get-ShowcaseTemplate.ps1"

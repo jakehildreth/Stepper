@@ -526,7 +526,7 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
         }
 
         Context 'Warnings and conversion' {
-            It 'emits a report-only warning once' {
+            It 'runs a script without comment-based help without emitting any warning' {
                 $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "warning-$(New-Guid).ps1"))
                 Set-Content -Path $scriptPath -Value @(
                     '[CmdletBinding()]'
@@ -542,7 +542,8 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
                 $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
 
                 $result.ExitCode | Should -Be 0
-                ([regex]::Matches($result.Output, '\[MissingCbh\]')).Count | Should -Be 1
+                $result.Output | Should -Not -Match 'MissingCbh'
+                $result.Output | Should -Not -Match 'WARNING'
             }
 
             It 'fails non-interactive conversion review before runtime state or user code' {

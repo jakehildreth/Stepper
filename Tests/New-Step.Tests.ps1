@@ -17,7 +17,6 @@ BeforeAll {
     . "$ModulePath/Private/Find-UnmanagedCodeBlocks.ps1"
     . "$ModulePath/Private/Get-UnmanagedCodeAction.ps1"
     . "$ModulePath/Private/Update-ScriptWithUnmanagedActions.ps1"
-    . "$ModulePath/Private/Add-StepperCbh.ps1"
     . "$ModulePath/Private/New-StepperBackup.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Show-MoreDetails.ps1"

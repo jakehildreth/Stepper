@@ -28,7 +28,6 @@ function Get-StepperFindingCatalog {
             @('NestedStopStepper', 'Error', 'None', 'Stop-Stepper must be a direct root statement.'),
             @('ExecutableCodeAfterStop', 'Error', 'None', 'Executable user code cannot appear after Stop-Stepper.'),
             @('UnmanagedCode', 'Error', 'Interactive', 'Executable user code exists outside New-Step blocks and Stepper-ignore regions.'),
-            @('MissingCbh', 'Warning', 'None', 'The script does not contain comment-based help with a .SYNOPSIS section.'),
             @('MissingStopStepper', 'Warning', 'Interactive', 'Stop-Stepper is missing; successful runs will not remove state automatically.')
         )
 

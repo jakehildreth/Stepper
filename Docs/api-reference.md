@@ -115,7 +115,6 @@ Error codes:
 
 Warning codes:
 
-- `MissingCbh`
 - `MissingStopStepper`
 
 `IsValid` is `$true` when zero Error findings are present. Warnings are informational and do not affect validity.
@@ -143,7 +142,7 @@ Fixes applied automatically:
 | `MissingBootstrapRegion` | Wraps an already-canonical install guard in a Stepper-ignore region |
 | `MissingStartStepper` | Adds `Start-Stepper` immediately after a canonical guarded install |
 
-Warnings and comment-based help are never repaired automatically. Unsafe insertion
+Warnings are never repaired automatically. Unsafe insertion
 points are left unchanged and remain in `Issues`.
 
 Returns `{ Path, IsValid, Issues, Changed, BackupPath, AppliedRepairs,

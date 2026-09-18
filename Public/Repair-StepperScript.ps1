@@ -10,8 +10,8 @@ function Repair-StepperScript {
 
         Repair is limited to MissingParamBlock, MissingCmdletBinding,
         MissingInstallGuard, MissingBootstrapRegion, and MissingStartStepper when
-        each addition has a safe canonical location. Warnings, including MissingCbh,
-        are never automatically repaired.
+        each addition has a safe canonical location. Warnings are never
+        automatically repaired.
 
         A real repair creates one backup, writes once, removes stale Stepper state,
         and returns fresh post-write findings. With -WhatIf, no side effects or

@@ -198,69 +198,6 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
         }
     }
 
-    Context 'MissingCbh (Warning)' {
-        It 'Should report MissingCbh when script has no comment-based help' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Contain 'MissingCbh'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-
-        It 'MissingCbh issue should have Severity = Warning' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $issue = $result.Issues | Where-Object Code -EQ 'MissingCbh'
-                $issue.Severity | Should -Be 'Warning'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-
-        It 'Should not report MissingCbh when .SYNOPSIS is present' {
-            # Arrange
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    Has help.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Not -Contain 'MissingCbh'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-    }
-
     Context 'MissingStopStepper (Warning)' {
         It 'Should report MissingStopStepper when Stop-Stepper is absent' {
             # Arrange
@@ -369,7 +306,7 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             try {
                 # Act
                 $result = Test-StepperScript -ScriptPath $path
-                # Assert - MissingCbh and MissingStopStepper are warnings only
+                # Assert - MissingStopStepper is a warning only
                 $result.IsValid | Should -BeTrue
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
@@ -503,8 +440,7 @@ Describe 'Canonical Stepper finding catalog' -Tag 'Unit' {
             'StartBeforeInstallGuard', 'StartAfterExecutableCode', 'NoSteps',
             'NestedNewStep', 'MissingStepScriptBlock', 'NewStepBeforeStart',
             'NewStepAfterStop', 'DuplicateStopStepper', 'NestedStopStepper',
-            'ExecutableCodeAfterStop', 'UnmanagedCode',
-            'MissingCbh', 'MissingStopStepper'
+            'ExecutableCodeAfterStop', 'UnmanagedCode', 'MissingStopStepper'
         )
         $catalog = Get-StepperFindingCatalog
         @($catalog.Keys) | Should -HaveCount $expected.Count

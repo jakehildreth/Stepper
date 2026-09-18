@@ -257,7 +257,7 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
         }
     }
 
-    It 'never auto-fixes MissingCbh or MissingStopStepper warnings' {
+    It 'never auto-fixes the MissingStopStepper warning' {
         $path = New-TempScript @(
             '[CmdletBinding()]'
             'param()'
@@ -273,7 +273,6 @@ Describe 'Repair-StepperScript' -Tag 'Unit' {
 
             $result.Changed | Should -BeFalse
             Get-Content -LiteralPath $path -Raw | Should -Be $before
-            $result.Issues.Code | Should -Contain 'MissingCbh'
             $result.Issues.Code | Should -Contain 'MissingStopStepper'
         }
         finally {

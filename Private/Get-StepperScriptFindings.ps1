@@ -330,10 +330,5 @@ function Get-StepperScriptFindings {
         }
     }
 
-    try { $help = $ast.GetHelpContent() } catch { $help = $null }
-    if (-not $help -or [string]::IsNullOrWhiteSpace($help.Synopsis)) {
-        $issues.Add((New-StepperIssue -Code 'MissingCbh'))
-    }
-
     return $issues.ToArray()
 }
