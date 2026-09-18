@@ -13,8 +13,8 @@ function Add-StepperCbh {
         - If .NOTES already exists: appends the Stepper blurb to it.
         - If the Stepper blurb is already present in .NOTES: makes no changes.
 
-        This function is silent. It never calls Write-Host or exit. It is called
-        by Repair-StepperScript as part of the first-run fixup pipeline.
+        This function is silent. It never calls Write-Host or exit. Deterministic
+        repair does not call it because MissingCbh is report-only.
 
     .PARAMETER ScriptPath
         Absolute path to the PowerShell script file to modify.

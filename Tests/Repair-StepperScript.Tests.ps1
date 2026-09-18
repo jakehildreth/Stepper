@@ -2,330 +2,419 @@ BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
     . "$ModulePath/Private/Get-ScriptHash.ps1"
     . "$ModulePath/Private/Get-ScriptAst.ps1"
-    . "$ModulePath/Private/Find-NewStepBlocks.ps1"
-    . "$ModulePath/Private/Find-UnmanagedCodeBlocks.ps1"
-    . "$ModulePath/Private/Add-StepperCbh.ps1"
+    . "$ModulePath/Private/Get-StepperFindingCatalog.ps1"
     . "$ModulePath/Private/New-StepperIssue.ps1"
+    . "$ModulePath/Private/Get-StepperScriptFindings.ps1"
     . "$ModulePath/Private/New-StepperBackup.ps1"
-    . "$ModulePath/Private/Get-StepperInitInsertionIndex.ps1"
+    . "$ModulePath/Private/Get-StepperStatePath.ps1"
+    . "$ModulePath/Private/Remove-StepperState.ps1"
+    . "$ModulePath/Private/Invoke-StepperScriptRepair.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
     . "$ModulePath/Public/Repair-StepperScript.ps1"
 
     function New-TempScript {
         param([string[]]$Lines)
+
         $path = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-        $Lines -join [System.Environment]::NewLine | Set-Content -Path $path -Encoding UTF8 -NoNewline
+        $Lines -join [System.Environment]::NewLine |
+            Set-Content -LiteralPath $path -Encoding UTF8 -NoNewline
         return $path
     }
+
+    function Remove-TempScript {
+        param([string]$Path)
+
+        $directory = Split-Path -Parent $Path
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$Path.stepper" -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -LiteralPath $directory -Filter "$baseName.*.ps1.bak" -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+
+    $Help = @(
+        '<#'
+        '.SYNOPSIS'
+        '    Test script.'
+        '#>'
+    )
+    $Guard = 'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
 }
 
 Describe 'Repair-StepperScript' -Tag 'Unit' {
+    It 'returns the compatible validation properties and repair metadata' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            '#region Stepper ignore'
+            $Guard
+            'Start-Stepper'
+            '#endregion Stepper ignore'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -Path $path
 
-    Context 'Return value' {
-        It 'Should accept -Path as an alias for -ScriptPath' {
-            # Arrange
-            $path = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
-            try {
-                # Act / Assert; should not throw ParameterNotFound
-                { Repair-StepperScript -Path $path } | Should -Not -Throw
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+            $result.PSObject.Properties.Name | Should -Contain 'Path'
+            $result.PSObject.Properties.Name | Should -Contain 'IsValid'
+            $result.PSObject.Properties.Name | Should -Contain 'Issues'
+            $result.PSObject.Properties.Name | Should -Contain 'Changed'
+            $result.PSObject.Properties.Name | Should -Contain 'BackupPath'
+            $result.PSObject.Properties.Name | Should -Contain 'AppliedRepairs'
+            $result.PSObject.Properties.Name | Should -Contain 'PlannedRepairs'
+            $result.Changed | Should -BeFalse
+            $result.AppliedRepairs | Should -BeNullOrEmpty
+            $result.PlannedRepairs | Should -BeNullOrEmpty
         }
-
-        It 'Should return a PSCustomObject with Path, IsValid, Issues' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Repair-StepperScript -ScriptPath $path
-                # Assert
-                $result.PSObject.Properties.Name | Should -Contain 'Path'
-                $result.PSObject.Properties.Name | Should -Contain 'IsValid'
-                $result.PSObject.Properties.Name | Should -Contain 'Issues'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-
-        It 'Should return the post-fix Test-StepperScript result' {
-            # Arrange; script is missing CmdletBinding
-            $path = New-TempScript @(
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Repair-StepperScript -ScriptPath $path
-                # Assert; after repair, MissingCmdletBinding should be gone
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Not -Contain 'MissingCmdletBinding'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Fixing MissingCmdletBinding' {
-        It 'Should add [CmdletBinding()] when missing' {
-            # Arrange
-            $path = New-TempScript @(
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                Repair-StepperScript -ScriptPath $path | Out-Null
-                # Assert
-                $content = Get-Content -Path $path -Raw
-                $content | Should -Match '\[CmdletBinding\(\)\]'
+    It 'repairs missing param, guard, and Start in one transaction' {
+        $path = New-TempScript @(
+            $Help
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        try {
+            Mock Set-Content {
+                [System.IO.File]::WriteAllText(
+                    $LiteralPath,
+                    [string]$Value,
+                    [System.Text.UTF8Encoding]::new($false)
+                )
             }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+            $content = Get-Content -LiteralPath $path -Raw
+            $backupFiles = @(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter "$([System.IO.Path]::GetFileNameWithoutExtension($path)).*.ps1.bak")
+
+            $result.Changed | Should -BeTrue
+            $result.AppliedRepairs | Should -Be @(
+                'MissingParamBlock'
+                'MissingInstallGuard'
+                'MissingStartStepper'
+            )
+            $result.PlannedRepairs | Should -Be $result.AppliedRepairs
+            $result.IsValid | Should -BeTrue
+            $content | Should -Match '(?s)\[CmdletBinding\(\)\]\s*param\(\)\s*#region Stepper ignore'
+            $content | Should -Match 'Install-Module Stepper[^\r\n]*\r?\nStart-Stepper\r?\n#endregion Stepper ignore'
+            $backupFiles | Should -HaveCount 1
+            $result.BackupPath | Should -Be $backupFiles[0].FullName
+            Should -Invoke Set-Content -Times 1 -Exactly -Scope It
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Fixing MissingInstallGuard' {
-        It 'Should add Install-Module Stepper guard when missing' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                Repair-StepperScript -ScriptPath $path | Out-Null
-                # Assert
-                $content = Get-Content -Path $path -Raw
-                $content | Should -Match 'Install-Module\s+Stepper'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    It 'adds CmdletBinding to an existing param block without replacing its parameters' {
+        $path = New-TempScript @(
+            $Help
+            'param([string]$Name)'
+            '#region Stepper ignore'
+            $Guard
+            'Start-Stepper'
+            '#endregion Stepper ignore'
+            'New-Step { Write-Host $Name }'
+            'Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+            $content = Get-Content -LiteralPath $path -Raw
+
+            $result.AppliedRepairs | Should -Be @('MissingCmdletBinding')
+            $content | Should -Match '(?s)\[CmdletBinding\(\)\]\s*param\(\[string\]\$Name\)'
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Fixing MissingCbh' {
-        It 'Should add CBH when missing (via Add-StepperCbh)' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
+    It 'inserts a missing param block after using statements' {
+        $path = New-TempScript @(
+            'using namespace System'
+            $Help
+            'New-Step { Write-Host ([DateTime]::UtcNow) }'
+            'Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+            $content = Get-Content -LiteralPath $path -Raw
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+                $path,
+                [ref]$null,
+                [ref]$parseErrors
             )
-            try {
-                # Act
-                Repair-StepperScript -ScriptPath $path | Out-Null
-                # Assert
-                $content = Get-Content -Path $path -Raw
-                $content | Should -Match '\.SYNOPSIS'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+
+            $result.AppliedRepairs | Should -Contain 'MissingParamBlock'
+            $content | Should -Match '(?s)^using namespace System.*\[CmdletBinding\(\)\]\s*param\(\)'
+            $parseErrors | Should -HaveCount 0
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Warning-only issues are reported not fixed' {
-        It 'Should not add Stop-Stepper for MissingStopStepper' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-            )
-            try {
-                $before = Get-Content -Path $path -Raw
-                # Act
-                $result = Repair-StepperScript -ScriptPath $path
-                $after  = Get-Content -Path $path -Raw
-                # Assert; file should not have Stop-Stepper injected by Repair
-                $after | Should -Not -Match 'Stop-Stepper'
-                # but the issue should still be in the result
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Contain 'MissingStopStepper'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
+    It 'wraps a canonical guard and inserts Start immediately after it' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            $Guard
+            '$StepperConversionComplete = $true'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+            $content = Get-Content -LiteralPath $path -Raw
 
-        It 'Should not inject New-Step blocks for NoSteps' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'Stop-Stepper'
+            $result.AppliedRepairs | Should -Be @(
+                'MissingBootstrapRegion'
+                'MissingStartStepper'
             )
-            try {
-                # Act
-                $result = Repair-StepperScript -ScriptPath $path
-                $content = Get-Content -Path $path -Raw
-                # Assert; no actual New-Step { } call injected (CBH blurb may mention it)
-                $content | Should -Not -Match 'New-Step\s*\{'
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Contain 'NoSteps'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+            $content | Should -Match 'Install-Module Stepper[^\r\n]*\r?\nStart-Stepper\r?\n#endregion Stepper ignore'
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Already-valid script' {
-        It 'Should return IsValid = $true and not modify the file' {
-            # Arrange
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    My script.'
-                '.NOTES'
-                '    Managed by Stepper. Use New-Step blocks to define resumable steps.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                '#region Stepper ignore'
-                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
-                'Start-Stepper'
-                '#endregion Stepper ignore'
-                'New-Step { Write-Host "step 1" }'
-                'Stop-Stepper'
-            )
-            try {
-                $before = Get-Content -Path $path -Raw
-                # Act
-                $result = Repair-StepperScript -ScriptPath $path
-                $after  = Get-Content -Path $path -Raw
-                # Assert
-                $result.IsValid | Should -BeTrue
-                $after | Should -Be $before
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    It 'wraps a module-qualified canonical guard' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            'if (-not (Microsoft.PowerShell.Core\Get-Module Stepper)) { PowerShellGet\Install-Module Stepper -Force }'
+            '$StepperConversionComplete = $true'
+            'Stepper\New-Step { Write-Host "step" }'
+            'Stepper\Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+
+            $result.AppliedRepairs | Should -Contain 'MissingBootstrapRegion'
+            $result.Changed | Should -BeTrue
+            (Test-StepperScript -ScriptPath $path).Issues.Code | Should -Not -Contain 'MissingBootstrapRegion'
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'SupportsShouldProcess (-WhatIf)' {
-        It 'Should not modify the file when -WhatIf is passed' {
-            # Arrange
-            $path = New-TempScript @(
-                'param()'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                $before = Get-Content -Path $path -Raw
-                # Act
-                Repair-StepperScript -ScriptPath $path -WhatIf
-                $after = Get-Content -Path $path -Raw
-                # Assert
-                $after | Should -Be $before
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    It 'does not repair a bootstrap region or Start when the guard is misplaced' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            'if ($true) {'
+            "    $Guard"
+            '}'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        try {
+            $before = Get-Content -LiteralPath $path -Raw
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+
+            $result.Changed | Should -BeFalse
+            $result.PlannedRepairs | Should -BeNullOrEmpty
+            Get-Content -LiteralPath $path -Raw | Should -Be $before
+            $result.Issues.Code | Should -Contain 'MisplacedInstallGuard'
+            $result.Issues.Code | Should -Contain 'MissingBootstrapRegion'
+            $result.Issues.Code | Should -Contain 'MissingStartStepper'
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
 
-    Context 'Path resolution' {
-        It 'Should accept a relative path (./script.ps1)' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "step 1" }'
-                'Stop-Stepper'
-            )
-            $dir  = Split-Path -Parent $path
-            $file = Split-Path -Leaf $path
-            Push-Location $dir
-            try {
-                # Act
-                $result = Repair-StepperScript -ScriptPath "./$file"
-                # Assert - IsValid should be true; broken AST would cause false MissingCmdletBinding
-                $result.IsValid | Should -BeTrue
-            }
-            finally {
-                Pop-Location
-                Remove-Item $path -ErrorAction SilentlyContinue
-            }
-        }
+    It 'applies safe additions while unrelated findings remain' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            'Stop-Stepper'
+        )
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
 
-        It 'Should accept a tilde path (~/script.ps1)' {
-            # Arrange
-            $fileName = "StepperPathTest_$([System.Guid]::NewGuid().ToString('N').Substring(0, 8)).ps1"
-            $absPath  = Join-Path $HOME $fileName
-            @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "step 1" }'
-                'Stop-Stepper'
-            ) -join [System.Environment]::NewLine | Set-Content -Path $absPath -Encoding UTF8 -NoNewline
-            try {
-                # Act
-                $result = Repair-StepperScript -ScriptPath "~/$fileName"
-                # Assert - IsValid should be true; broken AST would cause false MissingCmdletBinding
-                $result.IsValid | Should -BeTrue
-            }
-            finally {
-                Remove-Item $absPath -ErrorAction SilentlyContinue
-            }
+            $result.Changed | Should -BeTrue
+            $result.AppliedRepairs | Should -Be @(
+                'MissingInstallGuard'
+                'MissingStartStepper'
+            )
+            $result.IsValid | Should -BeFalse
+            $result.Issues.Code | Should -Contain 'NoSteps'
+        }
+        finally {
+            Remove-TempScript $path
         }
     }
-}
 
-Describe 'MissingStartStepper repair' -Tag 'Unit' {
-    Context 'Insertion' {
-        It 'Inserts Start-Stepper inside the first Stepper ignore region' {
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    s.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                '#region Stepper ignore'
-                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
-                '#endregion Stepper ignore'
-                'New-Step { Write-Host "x" }'
-                'Stop-Stepper'
+    It 'never auto-fixes MissingCbh or MissingStopStepper warnings' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]'
+            'param()'
+            '#region Stepper ignore'
+            $Guard
+            'Start-Stepper'
+            '#endregion Stepper ignore'
+            'New-Step { Write-Host "step" }'
+        )
+        try {
+            $before = Get-Content -LiteralPath $path -Raw
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+
+            $result.Changed | Should -BeFalse
+            Get-Content -LiteralPath $path -Raw | Should -Be $before
+            $result.Issues.Code | Should -Contain 'MissingCbh'
+            $result.Issues.Code | Should -Contain 'MissingStopStepper'
+        }
+        finally {
+            Remove-TempScript $path
+        }
+    }
+
+    It 'reports planned repairs under WhatIf without backup, write, state removal, or retest effects' {
+        $path = New-TempScript @(
+            $Help
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        $statePath = Get-StepperStatePath -ScriptPath $path
+        Set-Content -LiteralPath $statePath -Value '{"stale":true}' -NoNewline
+        try {
+            $before = Get-Content -LiteralPath $path -Raw
+            $script:currentRepairTestResult = Test-StepperScript -ScriptPath $path
+            Mock Test-StepperScript { $script:currentRepairTestResult }
+
+            $result = Repair-StepperScript -ScriptPath $path -WhatIf
+            $backupFiles = @(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter "$([System.IO.Path]::GetFileNameWithoutExtension($path)).*.ps1.bak")
+
+            $result.Changed | Should -BeFalse
+            $result.BackupPath | Should -BeNullOrEmpty
+            $result.AppliedRepairs | Should -BeNullOrEmpty
+            $result.PlannedRepairs | Should -Be @(
+                'MissingParamBlock'
+                'MissingInstallGuard'
+                'MissingStartStepper'
             )
-            try {
-                Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                $content = Get-Content $path -Raw
-                # Start-Stepper inserted after the guard line, before #endregion
-                $content | Should -Match 'Start-Stepper'
-                $content | Should -Match 'Install-Module Stepper[^\n]*\nStart-Stepper\n#endregion'
-            }
-            finally {
-                Remove-Item $path -ErrorAction SilentlyContinue
-            }
+            $result.Issues.Code | Should -Contain 'MissingParamBlock'
+            Get-Content -LiteralPath $path -Raw | Should -Be $before
+            Test-Path -LiteralPath $statePath | Should -BeTrue
+            $backupFiles | Should -HaveCount 0
+            Should -Invoke Test-StepperScript -Times 1 -Exactly -Scope It
+        }
+        finally {
+            Remove-TempScript $path
+        }
+    }
+
+    It 'removes stale state after a successful write' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        $statePath = Get-StepperStatePath -ScriptPath $path
+        Set-Content -LiteralPath $statePath -Value '{"stale":true}' -NoNewline
+        try {
+            $result = Repair-StepperScript -ScriptPath $path -Confirm:$false
+
+            $result.Changed | Should -BeTrue
+            Test-Path -LiteralPath $statePath | Should -BeFalse
+        }
+        finally {
+            Remove-TempScript $path
+        }
+    }
+
+    It 'prevents the write when backup creation fails' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        try {
+            $before = Get-Content -LiteralPath $path -Raw
+            Mock New-StepperBackup { throw 'simulated backup failure' }
+
+            { Repair-StepperScript -ScriptPath $path -Confirm:$false } |
+                Should -Throw '*script was not changed*'
+            Get-Content -LiteralPath $path -Raw | Should -Be $before
+        }
+        finally {
+            Remove-TempScript $path
+        }
+    }
+
+    It 'requires the supplied Test result to match the repaired path' {
+        $firstPath = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
+        $secondPath = New-TempScript @('[CmdletBinding()]', 'param()', 'Stop-Stepper')
+        try {
+            $testResult = Test-StepperScript -ScriptPath $firstPath
+
+            { Invoke-StepperScriptRepair -ScriptPath $secondPath -TestResult $testResult -Confirm:$false } |
+                Should -Throw '*does not match script path*'
+        }
+        finally {
+            Remove-TempScript $firstPath
+            Remove-TempScript $secondPath
+        }
+    }
+
+    It 'accepts relative and tilde paths through the public command' {
+        $path = New-TempScript @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            '#region Stepper ignore'
+            $Guard
+            'Start-Stepper'
+            '#endregion Stepper ignore'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        )
+        $directory = Split-Path -Parent $path
+        $fileName = Split-Path -Leaf $path
+        Push-Location $directory
+        try {
+            (Repair-StepperScript -ScriptPath "./$fileName").Path | Should -Be $path
+        }
+        finally {
+            Pop-Location
+            Remove-TempScript $path
         }
 
-        It 'Produces a script with no MissingStartStepper issue after repair' {
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    s.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                '#region Stepper ignore'
-                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
-                '#endregion Stepper ignore'
-                'New-Step { Write-Host "x" }'
-                'Stop-Stepper'
-            )
-            try {
-                $result = Repair-StepperScript -ScriptPath $path -Confirm:$false -WarningAction SilentlyContinue
-                $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
-            }
-            finally {
-                Remove-Item $path -ErrorAction SilentlyContinue
-            }
+        $homeFileName = "StepperRepair_$([guid]::NewGuid().ToString('N')).ps1"
+        $homePath = Join-Path $HOME $homeFileName
+        @(
+            $Help
+            '[CmdletBinding()]'
+            'param()'
+            '#region Stepper ignore'
+            $Guard
+            'Start-Stepper'
+            '#endregion Stepper ignore'
+            'New-Step { Write-Host "step" }'
+            'Stop-Stepper'
+        ) -join [System.Environment]::NewLine |
+            Set-Content -LiteralPath $homePath -Encoding UTF8 -NoNewline
+        try {
+            (Repair-StepperScript -ScriptPath "~/$homeFileName").Path | Should -Be $homePath
+        }
+        finally {
+            Remove-TempScript $homePath
         }
     }
 }
