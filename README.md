@@ -50,7 +50,7 @@ Stop-Stepper   # removes the state file on successful completion
 
 If the script fails inside a `New-Step` block, the next run resumes at the step that failed. All previously completed steps are skipped!
 
-On first run, Stepper checks for `[CmdletBinding()]` and the self-install guard independently. Each component is silently injected if missing (the guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings), then Stepper exits and asks you to re-run. Nothing is required beyond what's shown above.
+Before runtime state is loaded, Stepper validates the complete script structure, adds only safe missing scaffolding, and guides you through lifecycle or unmanaged-code findings. Any source rewrite creates a backup, removes stale state, and exits with code `75`; run the script again to continue.
 
 Stepper also logs every step's execution timing, host output, and a per-step transcript to `<scriptname>.ps1.stepper.log` by default. No configuration required.
 

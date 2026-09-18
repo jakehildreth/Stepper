@@ -1,7 +1,7 @@
 # ADR 0011: in-script sentinel variable for ConvertTo-StepperScript once-only guard
 
 **Date:** 2026-05-03
-**Status:** Accepted
+**Status:** Superseded by ADR 0014
 **Deciders:** Jake Hildreth
 
 ---

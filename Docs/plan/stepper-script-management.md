@@ -1,8 +1,10 @@
 # Plan: Stepper Script Management Functions
 
 **Date:** 2026-05-01
-**Status:** In Progress
+**Status:** Superseded by ADR 0014
 **Author:** Jake Hildreth
+
+> Historical plan. The canonical lifecycle, finding catalog, deterministic repair boundary, conversion review, and Start-Stepper ordering are defined by ADR 0014 and issues #89–#100.
 
 ---
 
