@@ -1,12 +1,24 @@
 # API Reference
 
+## `Start-Stepper`
+
+Validates and initializes a Stepper script before any managed code or runtime state is used. Alias: `Initialize-Stepper`.
+
+```powershell
+Start-Stepper
+```
+
+`Start-Stepper` runs the canonical integrity pipeline, coordinates approved remediation, completes cross-step conversion review, and only then initializes resume state and `$Stepper`. Source rewrites create a backup, remove stale state, and exit with code `75`. Scripts must be invoked normally; dot-sourcing is rejected because Stepper must be able to stop safely after a rewrite.
+
+In non-interactive hosts, deterministic repairs and unmanaged-code wrapping are automatic; lifecycle conflicts, unresolved `NoSteps`, conversion candidates, and malformed state fail safely. Matching state resumes, while a script-hash mismatch starts over.
+
 ## `New-Step`
 
 Executes a step in a resumable script. Tracks state by `filepath:lineNumber`.
 
 ```powershell
-New-Step [-Name] <string> [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>] [-SkipRequirementsCheck]
-New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>] [-SkipRequirementsCheck]
+New-Step [-Name] <string> [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>]
+New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-RetryInterval <int>] [-MaxRetries <int>]
 ```
 
 | Parameter | Type | Required | Description |
@@ -18,7 +30,6 @@ New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-Re
 | `Retry` | `switch` | No | Enable exponential backoff retry for this step. |
 | `RetryInterval` | `int` | No | Base interval in seconds between retries. Each attempt waits `RetryInterval * 2^attempt` seconds. Default: `60`. Minimum: `1`. Requires `-Retry`. |
 | `MaxRetries` | `int` | No | Max retry attempts after the initial failure (so up to `MaxRetries + 1` total executions). Default: `5`. Minimum: `1`. Requires `-Retry`. |
-| `SkipRequirementsCheck` | `switch` | No | Suppresses the automatic `[CmdletBinding()]` check and silent auto-inject. Use when you intentionally manage declarations yourself. |
 
 Must be called from a saved `.ps1` file. Does not work from the console or an unsaved editor buffer.
 
@@ -27,7 +38,6 @@ See [Logging](logging.md) for full details on log format, step transcripts, and 
 ### Retry Behavior
 
 When `-Retry` is specified, the `ScriptBlock` runs inside an exponential backoff loop:
-v
 - On each failure, Stepper waits `RetryInterval * 2^attempt` seconds and retries
 - The loop continues until the block succeeds or `MaxRetries` is exhausted
 - If all attempts fail, Stepper propagates a terminating error and stops
@@ -95,23 +105,23 @@ Returns a `PSCustomObject` with:
 |---|---|---|
 | `Path` | `string` | Resolved path to the script |
 | `IsValid` | `bool` | `$true` when no Error-severity issues exist |
-| `Issues` | `PSCustomObject[]` | Array of `{ Code, Severity, Message }` objects |
+| `Issues` | `PSCustomObject[]` | Array of `{ Code, Severity, Message, Location, Remediation }` findings |
 
-Issue codes:
+`Location` contains start/end line and column data plus the offending source text when a source extent exists. `Remediation` is `Deterministic`, `Interactive`, or `None`.
 
-| Code | Severity | Meaning |
-|---|---|---|
-| `MissingCmdletBinding` | Error | `[CmdletBinding()]` not present |
-| `MissingInstallGuard` | Error | `Install-Module Stepper` guard absent |
-| `MissingCbh` | Warning | No comment-based help block |
-| `MissingStopStepper` | Warning | `Stop-Stepper` not called |
-| `NoSteps` | Warning | No `New-Step` blocks found |
+Error codes:
 
-`IsValid` is `$true` when zero Error-severity issues are present. Warnings are informational and do not affect validity.
+`NotStepperScript`, `ParseError`, `MissingParamBlock`, `MissingCmdletBinding`, `MissingInstallGuard`, `InvalidInstallGuard`, `MisplacedInstallGuard`, `MissingBootstrapRegion`, `MalformedIgnoreRegion`, `MissingStartStepper`, `DuplicateStartStepper`, `NestedStartStepper`, `StartOutsideBootstrapRegion`, `StartBeforeInstallGuard`, `StartAfterExecutableCode`, `NoSteps`, `NestedNewStep`, `MissingStepScriptBlock`, `NewStepBeforeStart`, `NewStepAfterStop`, `DuplicateStopStepper`, `NestedStopStepper`, `ExecutableCodeAfterStop`, and `UnmanagedCode`.
+
+Warning codes:
+
+- `MissingStopStepper`
+
+`IsValid` is `$true` when zero Error findings are present. Warnings are informational and do not affect validity.
 
 ## `Repair-StepperScript`
 
-Inspects a script for Stepper convention issues and silently fixes what it can.
+Applies safe deterministic additions required by a Stepper script.
 
 ```powershell
 Repair-StepperScript [-ScriptPath] <string> [-WhatIf]
@@ -126,22 +136,26 @@ Fixes applied automatically:
 
 | Issue code | Fix |
 |---|---|
-| `MissingCmdletBinding` | Inserts `[CmdletBinding()] param()` |
-| `MissingInstallGuard` | Inserts Install-Module guard after `param()` |
-| `MissingCbh` | Delegates to `Add-StepperCbh` (silent) |
+| `MissingParamBlock` | Inserts a `[CmdletBinding()]` param block at the legal script-header position |
+| `MissingCmdletBinding` | Adds `[CmdletBinding()]` to the existing param block |
+| `MissingInstallGuard` | Adds the canonical install guard and Stepper-ignore region after `param()` |
+| `MissingBootstrapRegion` | Wraps an already-canonical install guard in a Stepper-ignore region |
+| `MissingStartStepper` | Adds `Start-Stepper` immediately after a canonical guarded install |
 
-The following are reported via `Write-Warning` but **not** automatically fixed (require author decision):
+Warnings are never repaired automatically. Unsafe insertion
+points are left unchanged and remain in `Issues`.
 
-- `MissingStopStepper`: placement depends on script structure
-- `NoSteps`: may be intentional during authoring
-
-Returns the post-fix result of `Test-StepperScript`. If no changes were needed, the script file is not modified. Supports `-WhatIf`.
+Returns `{ Path, IsValid, Issues, Changed, BackupPath, AppliedRepairs,
+PlannedRepairs }`. A real repair creates one backup, performs one write, removes
+stale Stepper state, and returns fresh post-write findings. `-WhatIf` returns the
+current findings and planned repairs without creating a backup, writing the script,
+removing state, or performing a post-write test.
 
 ## `ConvertTo-StepperScript`
 
 Detects variables that cross step boundaries and rewrites them to `$Stepper.<Var>` notation so they persist across steps and resume correctly after a crash.
 
-Called automatically on first run via `New-Step` when the conversion sentinel (`$StepperConversionComplete`) is absent. Can also be run manually at any time.
+The conversion sentinel (`$StepperConversionComplete`) records that the review is complete so the script-integrity lifecycle does not offer it again. The command can also be run manually.
 
 ```powershell
 ConvertTo-StepperScript [-Path] <string> [-OutputPath <string>] [-Force] [-WhatIf]
@@ -154,7 +168,7 @@ ConvertTo-StepperScript -Name <string> [-Directory <string>] [-OutputPath <strin
 | `Name` | `string` | Yes (ByName) | Script name with or without `.ps1`. Used with `-Directory` |
 | `Directory` | `string` | No | Directory for `-Name` mode. Defaults to `$PWD` |
 | `OutputPath` | `string` | No | Write converted content here instead of modifying the source. No backup is created when set |
-| `Force` | `switch` | No | Skip per-variable confirmation and convert all candidates |
+| `Force` | `switch` | No | Explicitly convert all candidates without per-variable confirmation |
 
 **Variable detection rules.** A variable is a candidate if it is:
 
@@ -168,12 +182,12 @@ When candidates are found, ConvertTo prompts for each:
 [Y] Yes (default)   [n] No, skip   [a] All, convert remaining   [q] Quit
 ```
 
-On completion, `$StepperConversionComplete = $true` is injected inside `#region Stepper ignore`. `New-Step` checks for this sentinel and skips the conversion hook on all subsequent runs.
+Completing the review writes `$StepperConversionComplete = $true` inside `#region Stepper ignore`, including when every candidate is declined. Choosing Quit writes nothing. If candidates exist but interactive input is unavailable, conversion fails with an actionable error instead of converting or skipping candidates.
 
-A timestamped backup (`<BaseName>.<yyyy.M.dHHmm>.ps1.bak`) is created alongside the script before any write.
+An in-place review creates one collision-resistant timestamped backup (`<BaseName>.<yyyy.M.dHHmmssfff>[.<n>].ps1.bak`), performs one rewrite, and removes stale `.stepper` state. The returned result has `Status = 'RerunRequired'` and `RerunRequired = $true`, allowing the caller to stop before runtime-state handling and request a rerun. Quit and no-candidate outcomes return `RerunRequired = $false`; scripts with no candidates are not rewritten.
 
 ## Error Handling
 
 - If a step throws, Stepper propagates a terminating error with step context (identifier, name, number). State is **not** saved for the failed step. On resume, that step re-executes.
-- `[CmdletBinding()]` in the calling script is required for error propagation to work correctly. Stepper auto-injects it if missing (see [How It Works](how-it-works.md)).
+- `[CmdletBinding()]` in the calling script is required for error propagation to work correctly. `Start-Stepper` adds it during deterministic repair, then exits with code `75` before managed code runs (see [How It Works](how-it-works.md)).
 - All file I/O errors are surfaced as typed `ErrorRecord` objects, not raw exceptions.

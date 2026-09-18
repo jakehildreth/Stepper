@@ -1,36 +1,50 @@
 function New-StepperIssue {
     <#
     .SYNOPSIS
-        Creates a structured issue object for Test-StepperScript results.
-
-    .PARAMETER Code
-        Machine-readable issue code (e.g. 'MissingCmdletBinding').
-
-    .PARAMETER Severity
-        Issue severity: 'Error' or 'Warning'.
-
-    .PARAMETER Message
-        Human-readable description of the issue and how to resolve it.
-
-    .OUTPUTS
-        PSCustomObject with properties: Code, Severity, Message
+        Creates a canonical Test-StepperScript finding.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Code,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateSet('Error', 'Warning')]
         [string]$Severity,
 
-        [Parameter(Mandatory)]
-        [string]$Message
+        [Parameter()]
+        [string]$Message,
+
+        [Parameter()]
+        [System.Management.Automation.Language.IScriptExtent]$Extent,
+
+        [Parameter()]
+        [PSCustomObject]$Location
     )
 
+    $definition = (Get-StepperFindingCatalog)[$Code]
+    if (-not $definition) {
+        throw "Unknown Stepper finding code '$Code'."
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('Severity')) { $Severity = $definition.Severity }
+    if (-not $PSBoundParameters.ContainsKey('Message')) { $Message = $definition.Message }
+
+    if ($Extent) {
+        $Location = [PSCustomObject]@{
+            StartLine   = $Extent.StartLineNumber
+            StartColumn = $Extent.StartColumnNumber
+            EndLine     = $Extent.EndLineNumber
+            EndColumn   = $Extent.EndColumnNumber
+            Text        = $Extent.Text
+        }
+    }
+
     [PSCustomObject]@{
-        Code     = $Code
-        Severity = $Severity
-        Message  = $Message
+        Code        = $Code
+        Severity    = $Severity
+        Message     = $Message
+        Location    = $Location
+        Remediation = $definition.Remediation
     }
 }

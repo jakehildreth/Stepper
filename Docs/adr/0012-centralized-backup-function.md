@@ -22,13 +22,13 @@ Each was independently responsible for producing a backup (or not). `ConvertTo-S
 
 ## Decision
 
-Introduce `Private/New-StepperBackup.ps1`: a single private function that all script-writing callers invoke immediately before writing. It produces a timestamped backup named:
+Introduce `Private/New-StepperBackup.ps1`: a single private function that all script-writing callers invoke immediately before writing. It produces a collision-resistant timestamped backup named:
 
 ```
-<BaseName>.<yyyy.M.dHHmm>.ps1.bak
+<BaseName>.<yyyy.M.dHHmmssfff>[.<n>].ps1.bak
 ```
 
-in the same directory as the source file. The CalVer timestamp matches the project's versioning convention (`yyyy.M.dHHmm`). Existing backups at the same timestamp are silently overwritten (`Copy-Item -Force`), which is safe because the source has not yet been modified at the time of the call.
+in the same directory as the source file. Millisecond precision avoids ordinary collisions; if a name already exists, a numeric suffix is added. Existing backups are never overwritten.
 
 ---
 
@@ -46,5 +46,5 @@ in the same directory as the source file. The CalVer timestamp matches the proje
 
 - `Add-StepperCbh`, `Repair-StepperScript`, `Update-ScriptWithUnmanagedActions`, `New-Step`, and `ConvertTo-StepperScript` each call `New-StepperBackup -Path $ScriptPath | Out-Null` immediately before writing
 - `ConvertTo-StepperScript` no longer writes a flat `.ps1.bak`; the timestamped `.ps1.bak` replaces it; existing tests that assert the old flat backup filename are updated accordingly
-- repeated runs of a Stepper-enabled script on the same day and hour will overwrite the backup from the same minute (same timestamp); in practice this is fine because the user is running the script interactively and the minute-resolution window is narrow
+- repeated rewrites retain every backup by using millisecond timestamps and numeric collision suffixes
 - the function is `Private`; not exported, not in the manifest's `FunctionsToExport`

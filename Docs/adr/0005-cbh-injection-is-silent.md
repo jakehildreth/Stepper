@@ -1,7 +1,7 @@
 # ADR 0005: CBH injection on first run is silent
 
 **Date:** 2026-05-01
-**Status:** Accepted
+**Status:** Superseded by ADR 0014
 **Deciders:** Jake Hildreth
 
 ---

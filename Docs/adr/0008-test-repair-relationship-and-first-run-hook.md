@@ -1,7 +1,7 @@
 # ADR 0008: Test-StepperScript is standalone; Repair-StepperScript calls Test- internally; New-Step first-run calls Repair-
 
 **Date:** 2026-05-01
-**Status:** Accepted
+**Status:** Superseded by ADR 0014
 **Deciders:** Jake Hildreth
 
 ---

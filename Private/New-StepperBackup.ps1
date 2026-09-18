@@ -5,8 +5,8 @@ function New-StepperBackup {
 
     .DESCRIPTION
         Copies the file at $Path to a backup named
-        <BaseName>.<yyyy.M.dHHmm>.ps1.bak in the same directory.
-        If a backup with the same timestamp already exists it is overwritten.
+        <BaseName>.<yyyy.M.dHHmmssfff>.ps1.bak in the same directory.
+        If that name already exists, a numeric collision suffix is added.
 
     .PARAMETER Path
         The full path to the .ps1 file to back up.
@@ -16,7 +16,7 @@ function New-StepperBackup {
 
     .EXAMPLE
         New-StepperBackup -Path 'C:\Scripts\Deploy.ps1'
-        # -> C:\Scripts\Deploy.2026.5.31430.ps1.bak
+        # -> C:\Scripts\Deploy.2026.5.3143015123.ps1.bak
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -30,11 +30,17 @@ function New-StepperBackup {
     $resolvedPath = $resolved.ProviderPath
     $dir          = Split-Path -Parent $resolvedPath
     $baseName     = [System.IO.Path]::GetFileNameWithoutExtension($resolvedPath)
-    $timestamp    = Get-Date -Format 'yyyy.M.dHHmm'
+    $timestamp    = Get-Date -Format 'yyyy.M.dHHmmssfff'
     $backupName   = "$baseName.$timestamp.ps1.bak"
     $backupPath   = Join-Path -Path $dir -ChildPath $backupName
+    $suffix = 1
+    while (Test-Path -LiteralPath $backupPath) {
+        $backupName = "$baseName.$timestamp.$suffix.ps1.bak"
+        $backupPath = Join-Path -Path $dir -ChildPath $backupName
+        $suffix++
+    }
 
-    Copy-Item -LiteralPath $resolvedPath -Destination $backupPath -Force
+    Copy-Item -LiteralPath $resolvedPath -Destination $backupPath -ErrorAction Stop
 
     return $backupPath
 }

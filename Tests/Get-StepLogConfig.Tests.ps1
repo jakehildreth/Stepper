@@ -184,6 +184,21 @@ Describe 'Get-StepLogConfig' -Tag 'Unit' {
         }
     }
 
+    Context 'Module-qualified lifecycle commands' {
+        It 'Reads logging options before a qualified Stop-Stepper call' {
+            $path = New-TempScript @(
+                "Stepper\New-Step 'Step 1' -LogPath 'C:\logs\qualified.log' -NoLog { }"
+                'Stepper\Stop-Stepper'
+                "Stepper\New-Step 'After stop' -LogPath 'C:\logs\ignored.log' { }"
+            )
+
+            $result = Get-StepLogConfig -ScriptPath $path
+
+            $result.UniqueStaticLogPaths | Should -Be @('C:\logs\qualified.log')
+            $result.NoLogStepIds | Should -HaveCount 1
+        }
+    }
+
     Context 'Return type' {
         It 'Should return a PSCustomObject' {
             $path = New-TempScript @(

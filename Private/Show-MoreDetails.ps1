@@ -132,7 +132,7 @@ function Show-MoreDetails {
                 {
                     param($node)
                     $node -is [System.Management.Automation.Language.CommandAst] -and
-                    ($node.GetCommandName() -eq 'New-Step') -and
+                    ((($node.GetCommandName() -split '\\')[-1]) -eq 'New-Step') -and
                     $node.Extent.StartLineNumber -le $prevStepLine -and
                     $node.Extent.EndLineNumber -ge $prevStepLine
                 },
@@ -140,7 +140,7 @@ function Show-MoreDetails {
             )
 
             # Collect all New-Step commands with scriptblock arguments
-            $cmdList = $scriptAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and ($node.GetCommandName() -eq 'New-Step') }, $true) |
+            $cmdList = $scriptAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and ((($node.GetCommandName() -split '\\')[-1]) -eq 'New-Step') }, $true) |
                       ForEach-Object {
                           $sb = $_.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.ScriptBlockAst] } | Select-Object -First 1
                           if ($sb) {

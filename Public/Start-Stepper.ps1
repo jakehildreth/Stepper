@@ -8,12 +8,11 @@ function Start-Stepper {
         the top of the script, inside the first '#region Stepper ignore' block,
         immediately after the Install-Module guard.
 
-        It resolves the calling script, initializes the $Stepper hashtable in the
-        caller's scope, creates the shared __StepperExecutionState, sets the
-        __StepperInitialized sentinel that New-Step requires, reads any existing
-        state file, and owns the resume/start-over decision and StepperData
-        injection. All of this happens before any unmanaged code runs, so
-        resume-aware reads such as 'if (-not $Stepper.ContainsKey(...))' work.
+        It resolves and validates the calling script, runs deterministic and
+        interactive remediation in canonical order, and completes cross-step
+        conversion before creating runtime state. Only after that gate opens does
+        it initialize $Stepper and __StepperExecutionState, read existing state,
+        and own the resume/start-over decision and StepperData injection.
 
         New-Step throws a terminating error if Start-Stepper has not run, because
         New-Step no longer performs any initialization itself.
@@ -21,11 +20,6 @@ function Start-Stepper {
         Choosing Start Over is pristine: the state file is deleted, $Stepper is
         recreated empty, and the previous run's log config is discarded, so the new
         run behaves as if no prior run happened.
-
-    .PARAMETER SkipRequirementsCheck
-        Suppresses the automatic check for '#requires -Modules Stepper' and
-        '[CmdletBinding()]' declarations. Use when you intentionally manage those
-        declarations yourself.
 
     .EXAMPLE
         #region Stepper ignore
@@ -47,13 +41,10 @@ function Start-Stepper {
     [CmdletBinding()]
     [Alias('Initialize-Stepper')]
     param(
-        [Parameter()]
+        [Parameter(DontShow)]
         [switch]$SkipRequirementsCheck
     )
 
-    # Resolve the calling script. Get-StepIdentifier walks the call stack and
-    # returns the first frame that is not a Stepper module frame, as "path:line".
-    # The line is meaningless for a non-step call; only the path is used.
     try {
         $callerId = Get-StepIdentifier
     }
@@ -70,7 +61,6 @@ function Start-Stepper {
     $lastColonIndex = $callerId.LastIndexOf(':')
     $scriptPath = $callerId.Substring(0, $lastColonIndex)
 
-    # Guard against unsaved files
     try {
         $fullPath = [System.IO.Path]::GetFullPath($scriptPath)
         if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
@@ -95,25 +85,147 @@ function Start-Stepper {
         $PSCmdlet.ThrowTerminatingError($errorRecord)
     }
 
-    $currentHash = Get-ScriptHash -ScriptPath $scriptPath
-    $statePath = Get-StepperStatePath -ScriptPath $scriptPath
+    $callerFrame = Get-PSCallStack | Where-Object {
+        $_.ScriptName -and
+        [string]::Equals(
+            [System.IO.Path]::GetFullPath($_.ScriptName),
+            $fullPath,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    } | Select-Object -Last 1
+    if ($callerFrame -and $callerFrame.InvocationInfo.InvocationName -eq '.') {
+        $exception = [System.InvalidOperationException]::new(
+            "Stepper scripts cannot be dot-sourced. Run '$fullPath' as a script so Stepper can safely stop after repairs or cancellation."
+        )
+        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+            $exception,
+            'DotSourcedStepperScript',
+            [System.Management.Automation.ErrorCategory]::InvalidOperation,
+            $fullPath
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
+    $scriptPath = $fullPath
+    $scriptName = Split-Path -Leaf $scriptPath
 
-    $callingScope = $PSCmdlet.SessionState
+    $writeFindings = {
+        param(
+            [object[]]$Issues,
+            [string]$Prefix
+        )
 
-    # Initialize $Stepper hashtable in calling script scope if it does not exist
-    try {
-        $existingStepper = $callingScope.PSVariable.Get('Stepper')
-        if (-not $existingStepper) {
-            $callingScope.PSVariable.Set('Stepper', @{})
-            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
+        foreach ($issue in $Issues) {
+            $location = if ($issue.Location) {
+                " (line $($issue.Location.StartLine), column $($issue.Location.StartColumn))"
+            } else {
+                ''
+            }
+            Write-Host ("{0}[{1}] {2}{3}" -f $Prefix, $issue.Code, $issue.Message, $location) -ForegroundColor Red
         }
     }
-    catch {
-        $callingScope.PSVariable.Set('Stepper', @{})
-        Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
+    $stopNormally = {
+        Write-Host 'Stepper stopped; no changes were made.' -ForegroundColor Gray
+        exit 0
+    }
+    $exitForRerun = {
+        param($Result)
+        Write-Host ''
+        Write-Host $Result.Message -ForegroundColor Green
+        if ($Result.BackupPath) {
+            Write-Host "Backup: $($Result.BackupPath)" -ForegroundColor Gray
+        }
+        exit 75
     }
 
-    # Create the shared execution state with fresh-run defaults
+    $testResult = Test-StepperScript -ScriptPath $scriptPath
+    $parseErrors = @($testResult.Issues | Where-Object Code -EQ 'ParseError')
+    if ($parseErrors.Count -gt 0) {
+        & $writeFindings $parseErrors ''
+        exit 1
+    }
+
+    $deterministicIssues = @($testResult.Issues | Where-Object Remediation -EQ 'Deterministic')
+    if ($deterministicIssues.Count -gt 0) {
+        $repairResult = Invoke-StepperScriptRepair -ScriptPath $scriptPath -TestResult $testResult
+        if ($repairResult.Changed) {
+            $summary = [PSCustomObject]@{
+                Message    = "Stepper repaired $scriptName ($($repairResult.AppliedRepairs -join ', ')). Re-run the script."
+                BackupPath = $repairResult.BackupPath
+            }
+            & $exitForRerun $summary
+        }
+
+        $testResult = $repairResult
+        $unresolvedDeterministicErrors = @($testResult.Issues | Where-Object {
+            $_.Severity -eq 'Error' -and $_.Remediation -eq 'Deterministic'
+        })
+        if ($unresolvedDeterministicErrors.Count -gt 0) {
+            & $writeFindings $unresolvedDeterministicErrors ''
+            exit 1
+        }
+    }
+
+    $reportOnlyErrors = @($testResult.Issues | Where-Object {
+        $_.Severity -eq 'Error' -and
+        $_.Remediation -eq 'None' -and
+        $_.Code -ne 'NoSteps'
+    })
+    if ($reportOnlyErrors.Count -gt 0) {
+        & $writeFindings $reportOnlyErrors ''
+        exit 1
+    }
+
+    $lifecycleResult = Invoke-StepperLifecycleRemediation -ScriptPath $scriptPath -Issues $testResult.Issues
+    switch ($lifecycleResult.Disposition) {
+        'Quit'  { & $stopNormally }
+        'Rerun' { & $exitForRerun $lifecycleResult }
+    }
+
+    $unmanagedResult = Invoke-StepperUnmanagedCodeRemediation -ScriptPath $scriptPath -Issues $testResult.Issues
+    switch ($unmanagedResult.Disposition) {
+        'Quit'  { & $stopNormally }
+        'Rerun' { & $exitForRerun $unmanagedResult }
+    }
+
+    $noSteps = @($testResult.Issues | Where-Object Code -EQ 'NoSteps')
+    if ($noSteps.Count -gt 0) {
+        & $writeFindings $noSteps ''
+        exit 1
+    }
+
+    $missingStopResult = Invoke-StepperMissingStopRemediation -ScriptPath $scriptPath -Issues $testResult.Issues
+    switch ($missingStopResult.Disposition) {
+        'Quit'  { & $stopNormally }
+        'Rerun' { & $exitForRerun $missingStopResult }
+    }
+
+    $remainingWarnings = @($testResult.Issues | Where-Object {
+        $_.Severity -eq 'Warning' -and $_.Code -ne 'MissingStopStepper'
+    })
+    foreach ($warning in $remainingWarnings) {
+        $location = if ($warning.Location) { " (line $($warning.Location.StartLine))" } else { '' }
+        Write-Warning "[$($warning.Code)] $($warning.Message)$location"
+    }
+
+    if (-not (Test-StepperConversionComplete -ScriptPath $scriptPath)) {
+        $conversionCandidates = @(Find-CrossStepVariables -ScriptPath $scriptPath)
+        if ($conversionCandidates.Count -gt 0) {
+            $conversionResult = ConvertTo-StepperScript -Path $scriptPath
+            if ($conversionResult.Status -eq 'Quit') {
+                exit 0
+            }
+            if ($conversionResult.RerunRequired) {
+                exit 75
+            }
+        }
+    }
+
+    $currentHash = Get-ScriptHash -ScriptPath $scriptPath
+    $statePath = Get-StepperStatePath -ScriptPath $scriptPath
+    $callingScope = $PSCmdlet.SessionState
+    $callingScope.PSVariable.Set('Stepper', @{})
+    Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Initialized `$Stepper hashtable"
+
     $executionState = @{
         RestoreMode       = $false
         TargetStep        = $null
@@ -126,174 +238,48 @@ function Start-Stepper {
     }
     $callingScope.PSVariable.Set('__StepperExecutionState', $executionState)
 
-    #Region Script-integrity checks. Each of these may REWRITE the script and
-    # then exit for a re-run (the rewrite invalidates the hash/state). They must
-    # all run BEFORE Read-StepperState. Ordered: requirements, unmanaged code,
-    # Stop-Stepper presence, ConvertTo.
-
-    # 1. Requirements check (declarations). Auto-repairs structural issues only.
-    if (-not $SkipRequirementsCheck.IsPresent) {
-        $preRepairResult = Test-StepperScript -ScriptPath $scriptPath
-        $needsRestart    = $preRepairResult.Issues |
-            Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard' }
-
-        $needsAutoRepair = $preRepairResult.Issues |
-            Where-Object { $_.Code -in 'MissingCmdletBinding', 'MissingInstallGuard', 'MissingCbh' }
-        if ($needsAutoRepair) {
-            Repair-StepperScript -ScriptPath $scriptPath -WarningAction SilentlyContinue | Out-Null
-        }
-
-        if ($needsRestart) {
-            $scriptName = Split-Path $scriptPath -Leaf
-            $added = ($needsRestart | ForEach-Object {
-                switch ($_.Code) {
-                    'MissingCmdletBinding' { '[CmdletBinding()]' }
-                    'MissingInstallGuard'  { 'Install-Module guard' }
-                }
-            }) -join ' and '
-            Write-Host ""
-            Write-Host "$added has been added to $scriptName." -ForegroundColor Green
-            Write-Host "Please re-run $scriptName." -ForegroundColor Green
-            exit
-        }
-    }
-
-    # 2. Unmanaged-code scan between New-Step blocks and before Stop-Stepper
-    try {
-        $scriptLines = Get-Content -Path $scriptPath -ErrorAction Stop
-    }
-    catch {
-        $exception = [System.IO.IOException]::new("Failed to read script file '$scriptPath'", $_.Exception)
-        $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-            $exception,
-            'ScriptReadFailed',
-            [System.Management.Automation.ErrorCategory]::ReadError,
-            $scriptPath
-        )
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
-    }
-
-    $blockInfo = Find-NewStepBlocks -ScriptPath $scriptPath
-    $newStepBlocks = $blockInfo.NewStepBlocks
-    $stopStepperLine = $blockInfo.StopStepperLine
-
-    $unmanagedBlocks = Find-UnmanagedCodeBlocks -ScriptLines $scriptLines -NewStepBlocks $newStepBlocks -StopStepperLine $stopStepperLine
-
-    if ($unmanagedBlocks.Count -gt 0) {
-        $scriptName = Split-Path $scriptPath -Leaf
-        $allLinesToRemove = @{}
-
-        foreach ($block in $unmanagedBlocks) {
-            $action = Get-UnmanagedCodeAction -ScriptName $scriptName -ScriptLines $scriptLines -Block $block
-
-            if ($action -eq 'Quit') {
-                Write-Host ""
-                Write-Host "Exiting..." -ForegroundColor Yellow
-                exit
-            }
-
-            if ($action -ne 'Ignore') {
-                foreach ($line in $block.Lines) {
-                    $allLinesToRemove[$line] = @{ Action = $action; Code = $scriptLines[$line] }
-                }
-            }
-        }
-
-        if ($allLinesToRemove.Count -gt 0) {
-            Update-ScriptWithUnmanagedActions -ScriptPath $scriptPath -ScriptLines $scriptLines -Actions $allLinesToRemove -NewStepBlocks $newStepBlocks
-            exit
-        }
-    }
-
-    # 3. Stop-Stepper presence check (after unmanaged scan, before ConvertTo)
-    $scriptContent = Get-Content -Path $scriptPath -Raw -ErrorAction Stop
-    if ($scriptContent -notmatch 'Stop-Stepper') {
-        $scriptName = Split-Path $scriptPath -Leaf
-        Write-Host ""
-        Write-Host "[!] Script '$scriptName' does not call Stop-Stepper." -ForegroundColor Magenta
-        Write-Host ""
-        Write-Host "Stop-Stepper ensures the state file is removed when the script completes successfully."
-        Write-Host ""
-        Write-Host "How would you like to proceed?"
-        Write-Host ""
-        Write-Host "  [A] Add 'Stop-Stepper' to the end of the script (Default)" -ForegroundColor Cyan
-        Write-Host "  [c] Continue without Stop-Stepper" -ForegroundColor White
-        Write-Host "  [q] Quit" -ForegroundColor White
-        Write-Host ""
-        Write-Host "Choice? [" -NoNewline
-        Write-Host "A" -NoNewline -ForegroundColor Cyan
-        Write-Host "/c/q]: " -NoNewline
-        $response = Read-StepperChoice -NonInteractiveDefault 'c'
-
-        if ($response -eq 'C' -or $response -eq 'c') {
-            Write-Warning "Continuing without Stop-Stepper. State file will not be cleaned up automatically."
-        }
-        elseif ($response -eq 'Q' -or $response -eq 'q') {
-            Write-Host ""
-            Write-Host "Exiting..." -ForegroundColor Yellow
-            exit
-        }
-        else {
-            # 'A'/'' or any other input: add Stop-Stepper to the end
-            $updatedContent = $scriptContent.TrimEnd()
-            if (-not $updatedContent.EndsWith("`n")) {
-                $updatedContent += "`n"
-            }
-            $updatedContent += "`nStop-Stepper`n"
-
-            try {
-                New-StepperBackup -Path $scriptPath | Out-Null
-                Set-Content -Path $scriptPath -Value $updatedContent -NoNewline -ErrorAction Stop
-            }
-            catch {
-                $exception = [System.IO.IOException]::new("Failed to write to script file '$scriptPath'", $_.Exception)
-                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
-                    $exception,
-                    'ScriptWriteFailed',
-                    [System.Management.Automation.ErrorCategory]::WriteError,
-                    $scriptPath
-                )
-                $PSCmdlet.ThrowTerminatingError($errorRecord)
-            }
-
-            # Script modified: state is stale, delete it and exit for re-run
-            Remove-StepperState -StatePath $statePath
-            Write-Host ""
-            Write-Host "Stop-Stepper added. Please re-run $scriptName." -ForegroundColor Green
-            exit
-        }
-    }
-
-    # 4. ConvertTo-StepperScript hook (last script-mutating check)
-    if (-not (Test-StepperConversionComplete -ScriptPath $scriptPath)) {
-        $conversionCandidates = @(Find-CrossStepVariables -ScriptPath $scriptPath)
-        if ($conversionCandidates.Count -gt 0) {
-            ConvertTo-StepperScript -Path $scriptPath
-            if (Test-StepperConversionComplete -ScriptPath $scriptPath) {
-                $scriptName = Split-Path $scriptPath -Leaf
-                Write-Host ""
-                Write-Host "Cross-step variables have been converted to `$Stepper.<Var> notation and `$StepperConversionComplete = `$true has been added to $scriptName." -ForegroundColor Green
-                Write-Host "Please re-run $scriptName." -ForegroundColor Green
-                exit
-            }
-        }
-    }
-    #EndRegion Script-integrity checks
-
-    # Read any existing state file and own the resume/start-over decision.
-    $existingState = Read-StepperState -StatePath $statePath
+    $existingState = Read-StepperState -StatePath $statePath -ErrorAction Stop
 
     if ($existingState) {
+        $invalidState = {
+            param([string]$Reason)
+            $exception = [System.IO.InvalidDataException]::new(
+                "Stepper state '$statePath' is malformed or inconsistent: $Reason"
+            )
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'InvalidStepperState',
+                [System.Management.Automation.ErrorCategory]::InvalidData,
+                $statePath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+
+        foreach ($requiredProperty in 'ScriptHash', 'LastCompletedStep', 'Timestamp') {
+            if (-not $existingState.PSObject.Properties[$requiredProperty] -or
+                [string]::IsNullOrWhiteSpace([string]$existingState.$requiredProperty)) {
+                & $invalidState "the required '$requiredProperty' value is missing."
+            }
+        }
+
+        $parsedTimestamp = [datetime]::MinValue
+        if (-not [datetime]::TryParse([string]$existingState.Timestamp, [ref]$parsedTimestamp)) {
+            & $invalidState 'Timestamp is not a valid date and time.'
+        }
+
         $inventory = Get-StepInventory -ScriptPath $scriptPath
-        $stepLines  = $inventory.StepLines
-        $stepNames  = $inventory.StepNames
+        $stepLines  = @($inventory.StepLines)
+        $stepNames  = @($inventory.StepNames)
         $totalSteps = $inventory.TotalSteps
 
         $lastStep = $existingState.LastCompletedStep
         $lastStepIndex = $stepLines.IndexOf($lastStep)
+        if ($lastStepIndex -lt 0) {
+            & $invalidState "LastCompletedStep '$lastStep' is not present in the final step inventory."
+        }
         $nextStepNumber = $lastStepIndex + 2  # +1 for next step, +1 because index is 0-based
 
-        $timestamp = [DateTime]::Parse($existingState.Timestamp).ToString('yyyy-MM-dd HH:mm:ss')
+        $timestamp = $parsedTimestamp.ToString('yyyy-MM-dd HH:mm:ss')
         $availableVars = if ($existingState.StepperData -and $existingState.StepperData.Count -gt 0) {
             ($existingState.StepperData.Keys | Sort-Object) -join ', '
         } else {
@@ -324,7 +310,25 @@ function Start-Stepper {
             $callingScope.PSVariable.Set('Stepper', @{})
         }
 
-        if ($hashMismatch) {
+        $testResponses = Get-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
+        $hasQueuedResponse = $testResponses -and
+            $testResponses.Value -is [System.Collections.Generic.Queue[string]] -and
+            $testResponses.Value.Count -gt 0
+        $isNonInteractive = $false
+        try {
+            $isNonInteractive = [Console]::IsInputRedirected -and -not $hasQueuedResponse
+        }
+        catch {
+            $isNonInteractive = -not $hasQueuedResponse
+        }
+
+        if ($nextStepNumber -gt $totalSteps) {
+            & $startFresh
+        }
+        elseif ($hashMismatch -and $isNonInteractive) {
+            & $startFresh
+        }
+        elseif ($hashMismatch) {
             $nextStepId = $stepLines[$lastStepIndex + 1]
             $nextStepLine = ($nextStepId -split ':')[-1]
             $nextStepName = $stepNames[$lastStepIndex + 1]
@@ -387,9 +391,7 @@ function Start-Stepper {
                         break
                     }
                     elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
-                        Write-Host ""
-                        Write-Host "Exiting..." -ForegroundColor Yellow
-                        exit
+                        & $stopNormally
                     }
                     else {
                         & $startFresh
@@ -397,15 +399,23 @@ function Start-Stepper {
                     }
                 }
                 elseif ($response -eq 'Q' -or $response -eq 'q') {
-                    Write-Host ""
-                    Write-Host "Exiting..." -ForegroundColor Yellow
-                    exit
+                    & $stopNormally
                 }
                 else {
                     & $startFresh
                     continue
                 }
             }
+        }
+        elseif ($isNonInteractive) {
+            $nextStepId = $stepLines[$lastStepIndex + 1]
+            $nextStepLine = ($nextStepId -split ':')[-1]
+            $nextStepName = $stepNames[$lastStepIndex + 1]
+            $nextStepDisplay = if ($nextStepName) { "$nextStepName (Step $nextStepNumber, Line $nextStepLine)" } else { "Step $nextStepNumber (Line $nextStepLine)" }
+            Write-Host "Resuming from $nextStepDisplay..." -ForegroundColor Green
+            $executionState.RestoreMode = $true
+            $executionState.TargetStep = $lastStep
+            & $injectStepperData
         }
         else {
             Write-Host ""
@@ -453,8 +463,8 @@ function Start-Stepper {
                     elseif ($response -eq 'M' -or $response -eq 'm') {
                         Show-MoreDetails -ExistingState $existingState -ScriptPath $scriptPath -CurrentHash $currentHash -LastStep $lastStep -NextStepLine $nextStepLine -NextStepName $nextStepName -NextStepNumber $nextStepNumber
                         Write-Host "  [R] Resume $scriptName from $nextStepDisplay (Default)" -ForegroundColor Cyan
-                        Write-Host "  [S] Start over" -ForegroundColor White
-                        Write-Host "  [Q] Quit" -ForegroundColor White
+                        Write-Host "  [s] Start over" -ForegroundColor White
+                        Write-Host "  [q] Quit" -ForegroundColor White
                         Write-Host ""
                         Write-Host "Choice? [R/s/q]: " -NoNewline
                         $moreResponse = Read-StepperChoice -NonInteractiveDefault 'r'
@@ -471,9 +481,7 @@ function Start-Stepper {
                             break
                         }
                         elseif ($moreResponse -eq 'Q' -or $moreResponse -eq 'q') {
-                            Write-Host ""
-                            Write-Host "Exiting..." -ForegroundColor Yellow
-                            exit
+                            & $stopNormally
                         }
                         else {
                             & $startFresh
@@ -481,9 +489,7 @@ function Start-Stepper {
                         }
                     }
                     elseif ($response -eq 'Q' -or $response -eq 'q') {
-                        Write-Host ""
-                        Write-Host "Exiting..." -ForegroundColor Yellow
-                        exit
+                        & $stopNormally
                     }
                     else {
                         Write-Host ""
@@ -494,10 +500,6 @@ function Start-Stepper {
                         break
                     }
                 }
-            }
-            else {
-                Write-Host "All steps were completed. Starting fresh..." -ForegroundColor Yellow
-                & $startFresh
             }
             Write-Host ""
         }
@@ -589,9 +591,7 @@ function Start-Stepper {
                     $loggingEnabled = $false
                 }
                 'q' {
-                    Write-Host ""
-                    Write-Host "Exiting..." -ForegroundColor Yellow
-                    exit
+                    & $stopNormally
                 }
                 default {
                     # 'a' or anything else: log everything
