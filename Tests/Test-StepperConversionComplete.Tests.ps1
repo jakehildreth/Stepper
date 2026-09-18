@@ -40,6 +40,17 @@ Describe 'Test-StepperConversionComplete' -Tag 'Unit' {
         }
     }
 
+    Context 'When sentinel is explicitly false' {
+        It 'Should return $false until conversion review records $true' {
+            $path = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
+            '$StepperConversionComplete = $false' | Set-Content -Path $path -Encoding UTF8 -NoNewline
+            try {
+                Test-StepperConversionComplete -ScriptPath $path | Should -Be $false
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+    }
+
     Context 'When sentinel is only inside a New-Step body (nested scope)' {
         It 'Should return $false when assignment is inside a New-Step scriptblock' {
             $path = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
