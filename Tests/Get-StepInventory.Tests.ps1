@@ -174,6 +174,22 @@ Describe 'Get-StepInventory' -Tag 'Unit' {
         }
     }
 
+    Context 'Module-qualified lifecycle commands' {
+        It 'Inventories qualified New-Step calls and honors a qualified Stop-Stepper cutoff' {
+            $path = Join-Path $TestDrive "qualified-$(New-Guid).ps1"
+            Set-Content -Path $path -Value @(
+                "Stepper\New-Step 'Before stop' { }"
+                'Stepper\Stop-Stepper'
+                "Stepper\New-Step 'After stop' { }"
+            )
+
+            $result = Get-StepInventory -ScriptPath $path
+
+            $result.TotalSteps | Should -Be 1
+            $result.StepNames | Should -Be @('Before stop')
+        }
+    }
+
     Context 'StepLines format matches Get-StepIdentifier output' {
         BeforeAll {
             $script:ScriptPath = Join-Path $TestDrive "format-$(New-Guid).ps1"

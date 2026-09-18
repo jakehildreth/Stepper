@@ -46,6 +46,7 @@ BeforeAll {
             '}'
             "`$observed | Export-Clixml -Path '$observedPath'"
             '#endregion Stepper ignore'
+            'New-Step { }'
             'Stop-Stepper'
         )
         $lines += $Body
@@ -114,16 +115,23 @@ BeforeAll {
     # out-of-process. With no console, Read-Host throws and Read-StepperChoice
     # returns each menu's non-interactive default. Returns @{ Output; ExitCode }.
     function Invoke-StepperScriptProcess {
-        param([string]$ScriptPath)
+        param(
+            [string]$ScriptPath,
+            [string]$InputText,
+            [switch]$DotSource
+        )
         $modulePsd1 = "$ModulePath/Stepper.psd1"
         $outFile = Join-Path $TestDrive "proc-$(New-Guid).log"
-        # RedirectStandardInput from an empty file so any Read-Host in the child
-        # gets EOF (returns $null) instead of blocking on the inherited console.
         $emptyIn = Join-Path $TestDrive "stdin-$(New-Guid).txt"
-        Set-Content -Path $emptyIn -Value ''
+        if ($PSBoundParameters.ContainsKey('InputText')) {
+            [System.IO.File]::WriteAllText($emptyIn, $InputText)
+        } else {
+            [System.IO.File]::WriteAllBytes($emptyIn, [byte[]]@())
+        }
+        $invocation = if ($DotSource) { ". '$ScriptPath'" } else { "& '$ScriptPath'" }
         $proc = Start-Process -FilePath 'pwsh' -ArgumentList @(
             '-NoProfile', '-Command',
-            "`$env:STEPPER_SHOW_LOGO='false'; Import-Module '$modulePsd1' -Force; & '$ScriptPath'"
+            "`$env:STEPPER_SHOW_LOGO='false'; Import-Module '$modulePsd1' -Force; try { $invocation } catch { Write-Error `$_; exit 1 }; if (`$null -ne `$LASTEXITCODE) { exit `$LASTEXITCODE }"
         ) -RedirectStandardInput $emptyIn -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err" -Wait -PassThru
         $code = $proc.ExitCode
         $out = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue)
@@ -389,15 +397,294 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
 
             $content = Get-Content $scriptPath -Raw
             $content | Should -Match 'Install-Module Stepper'
-            $result.Output | Should -Match 'has been added'
+            $result.ExitCode | Should -Be 75
+            $result.Output | Should -Match 'Stepper repaired'
+            $result.Output | Should -Match 'Re-run the script'
+        }
+    }
+
+    Describe 'Start-Stepper canonical pipeline' -Tag 'Integration' {
+        Context 'Invocation gate' {
+            It 'Rejects a dot-sourced Stepper script before user code executes' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "dot-source-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'New-Step { }'
+                    '#region Stepper ignore'
+                    "'ran' | Set-Content -LiteralPath '$markerPath'"
+                    '#endregion Stepper ignore'
+                    'Stop-Stepper'
+                )
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath -DotSource
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match 'cannot be dot-sourced'
+                $markerPath | Should -Not -Exist
+            }
+        }
+
+        Context 'Rewrite gate' {
+            It 'removes stale state and exits 75 before user code after deterministic repair' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "repair-gate-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                $statePath = "$scriptPath.stepper"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'New-Step { }'
+                    '#region Stepper ignore'
+                    "'ran' | Set-Content -LiteralPath '$markerPath'"
+                    '#endregion Stepper ignore'
+                    'Stop-Stepper'
+                )
+                Set-Content -LiteralPath $statePath -Value 'stale'
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Be 75
+                $statePath | Should -Not -Exist
+                $markerPath | Should -Not -Exist
+                $result.Output | Should -Match 'Backup:'
+            }
+
+            It 'wraps unmanaged code non-interactively and exits 75 before executing it' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "unmanaged-gate-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    "'ran' | Set-Content -LiteralPath '$markerPath'"
+                    'Stop-Stepper'
+                )
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Be 75
+                $markerPath | Should -Not -Exist
+                (Get-Content -LiteralPath $scriptPath -Raw) | Should -Match 'New-Step \{'
+            }
+        }
+
+        Context 'Blocking errors' {
+            It 'blocks report-only errors before unmanaged remediation or user code' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "blocking-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'if ($true) { New-Step { } }'
+                    '#region Stepper ignore'
+                    "'ran' | Set-Content -LiteralPath '$markerPath'"
+                    '#endregion Stepper ignore'
+                    'Stop-Stepper'
+                )
+                $before = Get-Content -LiteralPath $scriptPath -Raw
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match '\[NestedNewStep\]'
+                (Get-Content -LiteralPath $scriptPath -Raw) | Should -BeExactly $before
+                $markerPath | Should -Not -Exist
+            }
+
+            It 'fails unresolved NoSteps after unmanaged remediation has no work' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "no-steps-$(New-Guid).ps1"))
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'Stop-Stepper'
+                )
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match '\[NoSteps\]'
+            }
+        }
+
+        Context 'Warnings and conversion' {
+            It 'emits a report-only warning once' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "warning-$(New-Guid).ps1"))
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'New-Step { }'
+                    'Stop-Stepper'
+                )
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Be 0
+                ([regex]::Matches($result.Output, '\[MissingCbh\]')).Count | Should -Be 1
+            }
+
+            It 'fails non-interactive conversion review before runtime state or user code' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "conversion-gate-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    'New-Step { $value = 1 }'
+                    'New-Step { $value | Out-Null }'
+                    '#region Stepper ignore'
+                    "'ran' | Set-Content -LiteralPath '$markerPath'"
+                    '#endregion Stepper ignore'
+                    'Stop-Stepper'
+                )
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match 'requires an interactive review'
+                $markerPath | Should -Not -Exist
+                "$scriptPath.stepper" | Should -Not -Exist
+            }
+        }
+    }
+
+    Describe 'Start-Stepper non-interactive state gate' -Tag 'Integration' {
+        Context 'Existing valid state' {
+            It 'resumes automatically when the saved hash matches' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "auto-resume-$(New-Guid).ps1"))
+                $firstMarker = "$scriptPath.first"
+                $secondMarker = "$scriptPath.second"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    "New-Step { 'first' | Set-Content -LiteralPath '$firstMarker' }"
+                    "New-Step { 'second' | Set-Content -LiteralPath '$secondMarker' }"
+                    'Stop-Stepper'
+                )
+                Write-PriorState -ScriptPath $scriptPath | Out-Null
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Be 0
+                $firstMarker | Should -Not -Exist
+                $secondMarker | Should -Exist
+                $result.Output | Should -Match 'Resuming from'
+                $result.Output | Should -Not -Match 'How would you like to proceed'
+            }
+
+            It 'starts over automatically when the saved hash differs' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "auto-fresh-$(New-Guid).ps1"))
+                $firstMarker = "$scriptPath.first"
+                $secondMarker = "$scriptPath.second"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    "New-Step { 'first' | Set-Content -LiteralPath '$firstMarker' }"
+                    "New-Step { 'second' | Set-Content -LiteralPath '$secondMarker' }"
+                    'Stop-Stepper'
+                )
+                Write-PriorState -ScriptPath $scriptPath | Out-Null
+                (Get-Content -LiteralPath $scriptPath -Raw).Replace("'second'", "'changed'") |
+                    Set-Content -LiteralPath $scriptPath -NoNewline
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Be 0
+                $firstMarker | Should -Exist
+                $secondMarker | Should -Exist
+                $result.Output | Should -Match 'Starting fresh'
+                $result.Output | Should -Not -Match 'How would you like to proceed'
+            }
+        }
+
+        Context 'Invalid state' {
+            It 'fails instead of guessing when state is malformed' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "malformed-state-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    "New-Step { 'ran' | Set-Content -LiteralPath '$markerPath' }"
+                    'Stop-Stepper'
+                )
+                [PSCustomObject]@{ ScriptHash = 'abc' } | Export-Clixml -LiteralPath "$scriptPath.stepper"
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match 'malformed or inconsistent'
+                $markerPath | Should -Not -Exist
+            }
+
+            It 'fails when the saved step is absent from the final inventory' {
+                $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "inconsistent-state-$(New-Guid).ps1"))
+                $markerPath = "$scriptPath.ran"
+                Set-Content -Path $scriptPath -Value @(
+                    '[CmdletBinding()]'
+                    'param()'
+                    '#region Stepper ignore'
+                    'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                    'Start-Stepper'
+                    '#endregion Stepper ignore'
+                    "New-Step { 'ran' | Set-Content -LiteralPath '$markerPath' }"
+                    'Stop-Stepper'
+                )
+                [PSCustomObject]@{
+                    ScriptHash            = (Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash
+                    LastCompletedStep     = "$scriptPath`:999"
+                    LastCompletedStepName = $null
+                    Timestamp             = (Get-Date).ToString('o')
+                    StepperData           = @{}
+                } | Export-Clixml -LiteralPath "$scriptPath.stepper"
+
+                $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.Output | Should -Match 'not present in the final step inventory'
+                $markerPath | Should -Not -Exist
+            }
         }
     }
 
     Context 'Stop-Stepper presence' {
-        It 'Appends Stop-Stepper when missing (empty/non-interactive input defaults to Add)' {
-            # Read-Host with closed stdin returns empty; the menu treats empty as
-            # the highlighted default [A] = Add, then exits for a re-run.
-            # CBH is present so the requirements check does not modify the file first.
+        It 'Continues without rewriting in a non-interactive run' {
             $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "stop-$(New-Guid).ps1"))
             Set-Content -Path $scriptPath -Value @(
                 '<#'
@@ -412,16 +699,18 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
                 '#endregion Stepper ignore'
                 'New-Step { }'
             )
+            $before = Get-Content $scriptPath -Raw
 
             $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
 
-            (Get-Content $scriptPath -Raw) | Should -Match 'Stop-Stepper'
-            $result.Output | Should -Match 'does not call Stop-Stepper'
+            $result.ExitCode | Should -Be 0
+            (Get-Content $scriptPath -Raw) | Should -BeExactly $before
+            $result.Output | Should -Match 'Continuing without Stop-Stepper'
         }
     }
 
-    Context 'Requirements repair is skipped with -SkipRequirementsCheck' {
-        It 'Does not modify a script missing the guard when -SkipRequirementsCheck is passed' {
+    Context 'SkipRequirementsCheck compatibility' {
+        It 'Runs the same deterministic repair pipeline when -SkipRequirementsCheck is passed' {
             $scriptPath = [System.IO.Path]::GetFullPath((Join-Path $TestDrive "skip-$(New-Guid).ps1"))
             Set-Content -Path $scriptPath -Value @(
                 '<#'
@@ -436,11 +725,11 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
                 'New-Step { }'
                 'Stop-Stepper'
             )
-            $before = Get-Content $scriptPath -Raw
 
-            Invoke-StepperScriptProcess -ScriptPath $scriptPath | Out-Null
+            $result = Invoke-StepperScriptProcess -ScriptPath $scriptPath
 
-            (Get-Content $scriptPath -Raw) | Should -Be $before
+            $result.ExitCode | Should -Be 75
+            (Get-Content $scriptPath -Raw) | Should -Match 'Install-Module Stepper'
         }
     }
 }

@@ -50,7 +50,7 @@ function Find-NewStepBlocks {
     # Find all New-Step command calls. AST correctly ignores occurrences inside strings/comments
     $newStepCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'New-Step'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'New-Step'
     }, $true)
 
     foreach ($call in $newStepCalls) {
@@ -64,7 +64,7 @@ function Find-NewStepBlocks {
     # Find Stop-Stepper, take the first occurrence
     $stopCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'Stop-Stepper'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'Stop-Stepper'
     }, $true)
 
     if ($stopCalls -and $stopCalls.Count -gt 0) {

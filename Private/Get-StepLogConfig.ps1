@@ -37,7 +37,7 @@ function Get-StepLogConfig {
     # Find Stop-Stepper cutoff line
     $stopCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'Stop-Stepper'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'Stop-Stepper'
     }, $true)
 
     $stopLine = if ($stopCalls -and $stopCalls.Count -gt 0) {
@@ -49,7 +49,7 @@ function Get-StepLogConfig {
     # Find all New-Step calls before Stop-Stepper
     $newStepCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'New-Step'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'New-Step'
     }, $true) | Where-Object { $_.Extent.StartLineNumber -lt $stopLine } |
         Sort-Object { $_.Extent.StartLineNumber }
 
