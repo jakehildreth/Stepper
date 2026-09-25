@@ -980,3 +980,9 @@ if ($Host.Name -eq 'Windows PowerShell ISE Host') {
 
     Write-Host '                                          by Jake Hildreth'
 }
+
+# Manually added after PX2PS generation: display the module version under the logo.
+# $StepperVersion is set by Stepper.psm1 before this file is dot-sourced.
+if ($StepperVersion) {
+    Write-Host ("v{0}" -f $StepperVersion).PadLeft($width)
+}

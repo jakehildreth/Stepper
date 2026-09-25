@@ -34,7 +34,13 @@ Delete the `.stepper` file manually, or select `[S] Start over` at the resume pr
 
 **The logo is distracting**
 
-Set `$env:STEPPER_SHOW_LOGO = 'false'` before importing the module.
+Create `config.json` in the Stepper config directory (`$env:XDG_CONFIG_HOME/stepper/`, or `~/.config/stepper/` on Linux/macOS and `$env:APPDATA\stepper\` on Windows when `XDG_CONFIG_HOME` is not set) with:
+
+```json
+{
+    "ShowLogo": false
+}
+```
 
 **Stepper fails with `TranscriptAlreadyActive`**
 

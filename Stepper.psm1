@@ -1,5 +1,17 @@
 ﻿# In Stepper.psm1 - more flexible
-if ($env:STEPPER_SHOW_LOGO -ne 'false') {
+# Load config helpers first: they decide whether the splash screen is shown.
+. $PSScriptRoot\Private\Get-StepperConfigPath.ps1
+. $PSScriptRoot\Private\Get-StepperConfig.ps1
+
+$StepperVersion = $null
+try {
+    $StepperVersion = (Import-PowerShellDataFile -Path $PSScriptRoot\Stepper.psd1).ModuleVersion
+} catch {
+    # Version display is cosmetic; continue without it
+}
+
+$StepperConfig = Get-StepperConfig
+if ($StepperConfig.ShowLogo -ne $false) {
     . $PSScriptRoot\Private\Show-Logo.ps1
 }
 
