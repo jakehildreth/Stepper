@@ -1,8 +1,16 @@
 # Data Persistence
 
-`$Stepper` is a hashtable initialized in the calling scope on the first `New-Step` invocation. Any key/value you add is automatically serialized to the `.stepper` file after each step and restored on resume.
+`$Stepper` is a hashtable initialized in the calling scope by `Start-Stepper` before any step runs. On Start Over it is re-created empty. Any key/value you add is automatically serialized to the `.stepper` file after each step and restored on resume.
 
 ```powershell
+[CmdletBinding()]
+param()
+
+#region Stepper ignore
+if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }
+Start-Stepper
+#endregion Stepper ignore
+
 New-Step 'Gather Data' {
     $Stepper.Servers = Get-Content servers.txt
     $Stepper.StartTime = Get-Date

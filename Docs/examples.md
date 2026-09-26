@@ -7,6 +7,8 @@
 param()
 
 #region Stepper ignore
+if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }
+Start-Stepper
 # This runs every time. Safe to leave outside New-Step
 $outputDir = Join-Path $PSScriptRoot 'output'
 #endregion Stepper ignore
@@ -33,4 +35,6 @@ New-Step {
 
 Stop-Stepper
 ```
+
+Because `$outputDir` is assigned at script level and read inside a step, the first run offers to convert it to `$Stepper.OutputDir` during cross-step variable review. Accept the conversion, or restructure the example to keep the script quiet.
 

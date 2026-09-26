@@ -26,8 +26,8 @@ New-Step {
 - Unnamed: `Step 1 (Line 12)`
 
 **Verbose output:**
-- Named: `Executing step 1/3 - 'Download Files'`
-- Unnamed: `Executing step 1/3`
+- Named: `[2026-03-08 14:22:01][INFO][Stepper] Executing step 1/3 - 'Download Files' (Script.ps1:6)`
+- Unnamed: `[2026-03-08 14:22:01][INFO][Stepper] Executing step 1/3 (Script.ps1:6)`
 
 ## Step Metadata
 

@@ -12,6 +12,14 @@ Start-Stepper
 
 In non-interactive hosts, deterministic repairs and unmanaged-code wrapping are automatic; lifecycle conflicts, unresolved `NoSteps`, conversion candidates, and malformed state fail safely. Matching state resumes, while a script-hash mismatch starts over.
 
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The user cancelled via Quit. No changes were made. |
+| `1` | Validation failure: parse errors, unresolved deterministic errors, or unresolved `NoSteps`. |
+| `75` | The source was rewritten (backup created, stale state removed). Run the script again. |
+
 ## `New-Step`
 
 Executes a step in a resumable script. Tracks state by `filepath:lineNumber`.
@@ -28,10 +36,12 @@ New-Step [-ScriptBlock] <scriptblock> [-LogPath <string>] [-NoLog] [-Retry] [-Re
 | `LogPath` | `string` | No | Path to the log file. Overrides the default (`<scriptname>.ps1.stepper.log`). Only needs to be specified once. Stepper resolves it via AST scan at init time. |
 | `NoLog` | `switch` | No | Exclude this step from logging. At init time Stepper prompts to choose scope: log all / skip flagged / disable entirely. |
 | `Retry` | `switch` | No | Enable exponential backoff retry for this step. |
-| `RetryInterval` | `int` | No | Base interval in seconds between retries. Each attempt waits `RetryInterval * 2^attempt` seconds. Default: `60`. Minimum: `1`. Requires `-Retry`. |
-| `MaxRetries` | `int` | No | Max retry attempts after the initial failure (so up to `MaxRetries + 1` total executions). Default: `5`. Minimum: `1`. Requires `-Retry`. |
+| `RetryInterval` | `int` | No | Base interval in seconds between retries. Each attempt waits `RetryInterval * 2^attempt` seconds. Default: `60`. Minimum: `1`. Has no effect without `-Retry` (a warning is emitted and execution continues). |
+| `MaxRetries` | `int` | No | Max retry attempts after the initial failure (so up to `MaxRetries + 1` total executions). Default: `5`. Minimum: `1`. Has no effect without `-Retry` (a warning is emitted and execution continues). |
 
 Must be called from a saved `.ps1` file. Does not work from the console or an unsaved editor buffer.
+
+`New-Step` performs no initialization. If `Start-Stepper` has not run first, it throws a terminating `StartStepperNotRun` error telling you to add `Start-Stepper` inside the first `#region Stepper ignore` block. The hidden `-SkipRequirementsCheck` switch is still accepted for backward compatibility but is a no-op.
 
 See [Logging](logging.md) for full details on log format, step transcripts, and active transcript conflict handling.
 
@@ -63,7 +73,7 @@ Removes the state file. Call at the end of every Stepper-enabled script.
 Stop-Stepper
 ```
 
-Automatically locates the calling script's state file via the call stack.
+Automatically locates the calling script's state file via the call stack. If the call stack yields no script path, it falls back to the `CurrentScriptPath` recorded in `__StepperExecutionState` during `Start-Stepper`.
 
 ## `New-StepperScript`
 
@@ -84,6 +94,8 @@ New-StepperScript [-Name] <string> [-Directory <string>] [-Force] [-Showcase]
 
 Returns `[System.IO.FileInfo]`: the created file, suitable for pipeline use.
 
+Supports `-WhatIf` and `-Confirm` (SupportsShouldProcess, ConfirmImpact `Low`).
+
 Both the minimal and showcase templates pass `Test-StepperScript` with `IsValid = $true` out of the box.
 
 ## `Test-StepperScript`
@@ -97,7 +109,7 @@ Test-StepperScript [-Path] <string>   # alias
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `ScriptPath` | `string` | Yes | Absolute path to the `.ps1` file to inspect. Also accepts `-Path` |
+| `ScriptPath` | `string` | Yes | Path to the `.ps1` file to inspect. Relative paths are resolved. Also accepts `-Path` |
 
 Returns a `PSCustomObject` with:
 
@@ -130,7 +142,7 @@ Repair-StepperScript [-Path] <string> [-WhatIf]   # alias
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `ScriptPath` | `string` | Yes | Absolute path to the `.ps1` file to repair. Also accepts `-Path` |
+| `ScriptPath` | `string` | Yes | Path to the `.ps1` file to repair. Relative paths are resolved. Also accepts `-Path` |
 
 Fixes applied automatically:
 
@@ -149,7 +161,8 @@ Returns `{ Path, IsValid, Issues, Changed, BackupPath, AppliedRepairs,
 PlannedRepairs }`. A real repair creates one backup, performs one write, removes
 stale Stepper state, and returns fresh post-write findings. `-WhatIf` returns the
 current findings and planned repairs without creating a backup, writing the script,
-removing state, or performing a post-write test.
+removing state, or performing a post-write test. Supports `-WhatIf` and `-Confirm`
+(SupportsShouldProcess, ConfirmImpact `Medium`).
 
 ## `ConvertTo-StepperScript`
 
@@ -164,7 +177,7 @@ ConvertTo-StepperScript -Name <string> [-Directory <string>] [-OutputPath <strin
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `Path` | `string` | Yes (ByPath) | Path to the `.ps1` file to convert |
+| `Path` | `string` | Yes (ByPath) | Path to the `.ps1` file to convert. Also accepts the alias `-ScriptPath` |
 | `Name` | `string` | Yes (ByName) | Script name with or without `.ps1`. Used with `-Directory` |
 | `Directory` | `string` | No | Directory for `-Name` mode. Defaults to `$PWD` |
 | `OutputPath` | `string` | No | Write converted content here instead of modifying the source. No backup is created when set |
@@ -182,12 +195,14 @@ When candidates are found, ConvertTo prompts for each:
 [Y] Yes (default)   [n] No, skip   [a] All, convert remaining   [q] Quit
 ```
 
-Completing the review writes `$StepperConversionComplete = $true` inside `#region Stepper ignore`, including when every candidate is declined. Choosing Quit writes nothing. If candidates exist but interactive input is unavailable, conversion fails with an actionable error instead of converting or skipping candidates.
+Completing the review writes `$StepperConversionComplete = $true` inside `#region Stepper ignore`, including when every candidate is declined. Choosing Quit writes nothing. If candidates exist but interactive input is unavailable, conversion fails with an actionable error instead of converting or skipping candidates. When candidates are converted and the script does not contain a `Start-Stepper` (or `Initialize-Stepper`) call, one is inserted automatically at the canonical position.
 
-An in-place review creates one collision-resistant timestamped backup (`<BaseName>.<yyyy.M.dHHmmssfff>[.<n>].ps1.bak`), performs one rewrite, and removes stale `.stepper` state. The returned result has `Status = 'RerunRequired'` and `RerunRequired = $true`, allowing the caller to stop before runtime-state handling and request a rerun. Quit and no-candidate outcomes return `RerunRequired = $false`; scripts with no candidates are not rewritten.
+An in-place review creates one collision-resistant timestamped backup (`<BaseName>.<yyyy.M.dHHmmssfff>[.<n>].ps1.bak`), performs one rewrite, and removes stale `.stepper` state. The returned result has `Status = 'RerunRequired'` and `RerunRequired = $true`, allowing the caller to stop before runtime-state handling and request a rerun. With `-OutputPath` the converted content is written there instead (no backup) and the result has `Status = 'WrittenToOutput'`. If the write is declined via `-WhatIf` or `-Confirm`, the result has `Status = 'Skipped'`. Quit and no-candidate outcomes return `RerunRequired = $false`; scripts with no candidates are not rewritten.
+
+Supports `-WhatIf` and `-Confirm` (SupportsShouldProcess, ConfirmImpact `Medium`).
 
 ## Error Handling
 
-- If a step throws, Stepper propagates a terminating error with step context (identifier, name, number). State is **not** saved for the failed step. On resume, that step re-executes.
+- If a step throws, Stepper propagates a terminating error with the message `Step failed [<throw-site file:line>]: <message>`, ErrorId `StepExecutionFailed`, and the step identifier (`filepath:lineNumber`) as TargetObject. State is **not** saved for the failed step. On resume, that step re-executes.
 - `[CmdletBinding()]` in the calling script is required for error propagation to work correctly. `Start-Stepper` adds it during deterministic repair, then exits with code `75` before managed code runs (see [How It Works](how-it-works.md)).
 - All file I/O errors are surfaced as typed `ErrorRecord` objects, not raw exceptions.

@@ -76,6 +76,12 @@ Example output:
 
 Levels: `INFO`, `WARN`, `ERROR`.
 
+Additional entries you may see in the log:
+
+- **Skipped steps**: on a resumed run, each previously completed step logs `Skipping step N/M ('Name') because it already completed in a previous run. (file:line)`.
+- **Logging disabled marker**: a step excluded via `-NoLog` (with scope `[s]`) writes a `=== STEP N - 'Name' LOGGING DISABLED BY USER ===` line in place of its transcript.
+- **Retry entries**: a failed attempt on a `-Retry` step logs a `WARN` entry (`Step N/M failed (attempt X/Y) at file:line: <message>. Retrying in Zs...`) plus an `[ATTEMPT N PARTIAL]` transcript section per attempt. A step that exhausts its retries logs an `ERROR` entry (`Step N/M FAILED at file:line: <message>`).
+
 ---
 
 ## Step Transcripts
@@ -106,6 +112,12 @@ If a step fails mid-execution, the section is marked `[PARTIAL]`:
 === END STEP 2 TRANSCRIPT [PARTIAL] ===
 ```
 
+On a `-Retry` step, each failed attempt gets its own section marked ` [ATTEMPT N PARTIAL]` instead, where N is the 1-based attempt number:
+
+```
+=== BEGIN STEP 2 TRANSCRIPT [ATTEMPT 1 PARTIAL] ===
+```
+
 ### Read-Host limitation on Unix/macOS
 
 `Start-Transcript` on PS Core (macOS/Linux) does not capture `Read-Host` prompts or the user's responses. All other output (`Write-Host`, `Write-Output`, pipeline output) is captured normally.
@@ -116,17 +128,18 @@ On Windows with PS 5.1 or PS 7, `Read-Host` prompts and responses are included i
 
 ## Active Transcript Conflict
 
-Stepper checks `$Host.UI.IsTranscribing` before starting a per-step transcript. If a transcript is already active (e.g., started by an enterprise runbook or `$PROFILE`), Stepper throws:
+Stepper checks `$Host.UI.IsTranscribing` before starting a per-step transcript. If a transcript is already active (e.g., started by an enterprise runbook or `$PROFILE`), Stepper prints a magenta host banner and throws a terminating error with ErrorId `TranscriptAlreadyActive`:
 
 ```
-TranscriptAlreadyActive: a PowerShell transcript is already running.
-Stop-Transcript before running a Stepper script with logging enabled.
+[!] Stepper detected an active transcript. Stop your transcript with Stop-Transcript and re-run the script.
+
+TranscriptAlreadyActive: An active PowerShell transcript was detected.
+Stop the transcript with Stop-Transcript and re-run the script.
 ```
 
 **Workarounds:**
 - Call `Stop-Transcript` before running the script
-- Add `-NoLog` to all steps
-- Choose `[N]` (disable entirely) at the scope prompt
+- Add `-NoLog` to the steps you want excluded, then choose `[s]` (skip flagged) or `[d]` (disable entirely) at the scope prompt. `-NoLog` alone is not enough: with the default `[A]` (log all), the flags are ignored, `NoLogStepIds` stays empty, and the transcript check still throws.
 
 ---
 

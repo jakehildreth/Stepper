@@ -59,7 +59,7 @@ When `Read-Host` is unavailable (CI/CD, remoting, unattended runs), Stepper fall
 
 | Situation | Behavior |
 |---|---|
-| Missing required structure | Repair, remove stale state, exit `75` |
+| Missing required structure | Repair, remove stale state, exit `75`. If no safe insertion point exists, the unresolved deterministic errors fail with exit code `1` instead of repairing |
 | Misplaced or duplicate Start call | Fail without rewriting |
 | Unmanaged code | Wrap, remove stale state, exit `75` |
 | Unresolved `NoSteps` | Fail |
@@ -82,12 +82,12 @@ Because rewrite exits must stop the script without terminating the caller's inte
 Run your script with `-Verbose` to see timestamped activity from Stepper:
 
 ```
-[2026-03-08 14:22:01][Stepper] Executing step 1/3 - 'Download Files'
-[2026-03-08 14:22:03][Stepper] Step complete. Writing state...
-[2026-03-08 14:22:03][Stepper] Executing step 2/3 - 'Process Data'
+[2026-03-08 14:22:01][INFO][Stepper] Executing step 1/3 - 'Download Files' (Script.ps1:6)
+[2026-03-08 14:22:03][INFO][Stepper] Step 1/3 - 'Download Files' completed in 2.05s (Script.ps1:6)
+[2026-03-08 14:22:03][INFO][Stepper] Executing step 2/3 - 'Process Data' (Script.ps1:10)
 ```
 
-Verbose messages cover: step execution, state read/write/remove, variable changes, and hash comparisons. Requires `[CmdletBinding()]` in the calling script.
+Verbose messages cover: step execution, state read/write/remove, and variable changes. Requires `[CmdletBinding()]` in the calling script.
 
 ## Logging
 
