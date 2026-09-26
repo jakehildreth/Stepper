@@ -27,3 +27,9 @@ _Avoid_: Loose code, unwrapped code
 **Finding**:
 A structured result from `Test-StepperScript` that identifies one Error or Warning in a Stepper script, its source location, and its permitted repair type.
 _Avoid_: Validation problem, check result, diagnostic item
+
+**Surfaced error**:
+A non-terminating error that reached the error stream and console during a step's execution. Counted and reported per step; never fails the step.
+
+**Silenced error**:
+A non-terminating error suppressed with `-ErrorAction SilentlyContinue` inside a step; recorded in `$Error` but not displayed. Counted and reported separately from surfaced errors; never fails the step.
