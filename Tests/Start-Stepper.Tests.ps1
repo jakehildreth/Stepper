@@ -1,6 +1,16 @@
 BeforeAll {
     $ModulePath = Split-Path -Path $PSScriptRoot -Parent
-    $env:STEPPER_SHOW_LOGO = 'false'
+
+    # Suppress the splash screen via the XDG-compatible config file. Child
+    # processes started by Start-Process inherit XDG_CONFIG_HOME, so this
+    # covers both the in-process and subprocess module imports.
+    $script:PrevXdgConfigHome = $env:XDG_CONFIG_HOME
+    $script:StepperTestConfigHome = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "stepper-test-config-$(New-Guid)"
+    $configDir = Join-Path -Path $script:StepperTestConfigHome -ChildPath 'stepper'
+    $null = New-Item -ItemType Directory -Path $configDir -Force
+    [System.IO.File]::WriteAllText((Join-Path -Path $configDir -ChildPath 'config.json'), '{"ShowLogo": false}')
+    $env:XDG_CONFIG_HOME = $script:StepperTestConfigHome
+
     Import-Module "$ModulePath/Stepper.psd1" -Force
     # Capture the exact module instance this file loaded; Get-Module Stepper can
     # return multiple instances when the full suite runs several test files.
@@ -131,7 +141,7 @@ BeforeAll {
         $invocation = if ($DotSource) { ". '$ScriptPath'" } else { "& '$ScriptPath'" }
         $proc = Start-Process -FilePath 'pwsh' -ArgumentList @(
             '-NoProfile', '-Command',
-            "`$env:STEPPER_SHOW_LOGO='false'; Import-Module '$modulePsd1' -Force; try { $invocation } catch { Write-Error `$_; exit 1 }; if (`$null -ne `$LASTEXITCODE) { exit `$LASTEXITCODE }"
+            "Import-Module '$modulePsd1' -Force; try { $invocation } catch { Write-Error `$_; exit 1 }; if (`$null -ne `$LASTEXITCODE) { exit `$LASTEXITCODE }"
         ) -RedirectStandardInput $emptyIn -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err" -Wait -PassThru
         $code = $proc.ExitCode
         $out = (Get-Content $outFile -Raw -ErrorAction SilentlyContinue)
@@ -732,5 +742,12 @@ Describe 'Start-Stepper script checks' -Tag 'Integration' {
             $result.ExitCode | Should -Be 75
             (Get-Content $scriptPath -Raw) | Should -Match 'Install-Module Stepper'
         }
+    }
+}
+
+AfterAll {
+    $env:XDG_CONFIG_HOME = $script:PrevXdgConfigHome
+    if ($script:StepperTestConfigHome -and (Test-Path $script:StepperTestConfigHome)) {
+        Remove-Item -Path $script:StepperTestConfigHome -Recurse -Force
     }
 }

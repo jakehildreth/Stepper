@@ -102,8 +102,16 @@ Logging is on by default. Use `-NoLog` on a `New-Step` call to exclude a step, o
 
 ## Logo
 
-Stepper displays a colorful pixel-art logo on module import. To suppress it:
+Stepper displays a colorful pixel-art logo (with the module version) on module import. To suppress it, create a `config.json` in the Stepper config directory with `ShowLogo` set to `false`:
 
-```powershell
-$env:STEPPER_SHOW_LOGO = 'false'
+```json
+{
+    "ShowLogo": false
+}
 ```
+
+The config directory is XDG Base Directory compatible:
+
+- `$env:XDG_CONFIG_HOME/stepper/` when `XDG_CONFIG_HOME` is set
+- `$env:APPDATA\stepper\` on Windows when `XDG_CONFIG_HOME` is not set
+- `~/.config/stepper/` on Linux/macOS when `XDG_CONFIG_HOME` is not set
