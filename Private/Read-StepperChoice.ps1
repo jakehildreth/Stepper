@@ -12,8 +12,9 @@ function Read-StepperChoice {
           1. If the script-scope variable __StepperTestResponses is a non-empty
              queue (System.Collections.Generic.Queue[string]), dequeue and return
              the next response. Tests populate this before invoking a cmdlet.
-          2. Try Read-Host and return whatever the user types.
-          3. If Read-Host throws (non-interactive host), return -NonInteractiveDefault.
+          2. If standard input is redirected, return -NonInteractiveDefault.
+          3. Try Read-Host and return whatever the user types.
+          4. If Read-Host throws (non-interactive host), return -NonInteractiveDefault.
 
     .PARAMETER NonInteractiveDefault
         The choice returned when no test response is queued and Read-Host is
@@ -37,6 +38,17 @@ function Read-StepperChoice {
     $queue = Get-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
     if ($queue -and $queue.Value -is [System.Collections.Generic.Queue[string]] -and $queue.Value.Count -gt 0) {
         return $queue.Value.Dequeue()
+    }
+
+    try {
+        if ([Console]::IsInputRedirected) {
+            Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Redirected input detected, defaulting to '$NonInteractiveDefault'"
+            return $NonInteractiveDefault
+        }
+    }
+    catch {
+        # Hosts without a console fall through to Read-Host, whose failure uses
+        # the same non-interactive default.
     }
 
     try {

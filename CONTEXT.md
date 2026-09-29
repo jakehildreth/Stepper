@@ -23,3 +23,7 @@ _Avoid_: Excluded code, skipped code
 **Unmanaged code**:
 Executable user code outside both `New-Step` blocks and Stepper-ignore regions; lifecycle commands themselves are not unmanaged code.
 _Avoid_: Loose code, unwrapped code
+
+**Finding**:
+A structured result from `Test-StepperScript` that identifies one Error or Warning in a Stepper script, its source location, and its permitted repair type.
+_Avoid_: Validation problem, check result, diagnostic item

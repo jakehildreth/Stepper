@@ -6,12 +6,15 @@ function ConvertTo-StepperScript {
     .DESCRIPTION
         Uses Find-CrossStepVariables to identify variables that are assigned in one
         New-Step block and read in a later one. For each candidate, prompts the user
-        to confirm the rewrite (skipped with -Force). Rewrites only occurrences
-        inside New-Step scriptblock bodies, leaving script-level code untouched.
+        to confirm the rewrite (skipped with -Force).
 
         By default the source file is modified in-place and a .bak backup is created.
         When -OutputPath is provided the rewritten content is written there and the
         source is not modified (no .bak).
+
+        A completed review writes $StepperConversionComplete = $true even when every
+        candidate is declined. Quitting writes nothing. In-place rewrites remove
+        stale Stepper state and return a result whose RerunRequired property is true.
 
     .PARAMETER Path
         Path to the script file to convert.
@@ -27,7 +30,11 @@ function ConvertTo-StepperScript {
         No .bak file is created when this parameter is used.
 
     .PARAMETER Force
-        Skip interactive per-variable confirmation and convert all candidates.
+        Explicitly convert all candidates without per-variable confirmation.
+
+    .OUTPUTS
+        PSCustomObject describing the outcome. RerunRequired is true after any
+        in-place conversion or sentinel rewrite.
 
     .EXAMPLE
         ConvertTo-StepperScript -Path ./Deploy.ps1
@@ -81,13 +88,23 @@ function ConvertTo-StepperScript {
 
     if ($candidates.Count -eq 0) {
         Write-Host "No cross-step variable candidates found in '$resolvedPath'." -ForegroundColor Gray
-        return
+        return [PSCustomObject]@{
+            Status          = 'NoCandidates'
+            Changed         = $false
+            RerunRequired   = $false
+            CandidateCount  = 0
+            ConvertedCount  = 0
+            BackupPath      = $null
+            TargetPath      = $resolvedPath
+        }
     }
 
-    # Interactive selection (skipped with -Force)
+    # Interactive selection (skipped only by the explicit -Force opt-in)
     $selected = [System.Collections.Generic.List[string]]::new()
+    $reviewCompleted = $false
     if ($Force) {
         foreach ($c in $candidates) { [void]$selected.Add($c) }
+        $reviewCompleted = $true
     } else {
         $scriptName = Split-Path $resolvedPath -Leaf
         Write-Host ""
@@ -97,7 +114,13 @@ function ConvertTo-StepperScript {
         Write-Host "    Converting them to `$Stepper.<Var> notation ensures they persist across steps."
         Write-Host ""
 
+        $convertAll = $false
         foreach ($var in $candidates) {
+            if ($convertAll) {
+                [void]$selected.Add($var)
+                continue
+            }
+
             $capitalized = [char]::ToUpper($var[0]) + $var.Substring(1)
             Write-Host "Convert " -NoNewline
             Write-Host "`$$var" -NoNewline -ForegroundColor Yellow
@@ -113,27 +136,42 @@ function ConvertTo-StepperScript {
             Write-Host "Choice? [" -NoNewline
             Write-Host "Y" -NoNewline -ForegroundColor Cyan
             Write-Host "/n/a/q]: " -NoNewline
-            try {
-                $answer = Read-Host
-            } catch {
-                $answer = 'y'
+            $answer = Read-StepperChoice -NonInteractiveDefault '__StepperNonInteractive__'
+            if ($answer -eq '__StepperNonInteractive__') {
+                $exception = [System.InvalidOperationException]::new(
+                    "Cross-step variable conversion for '$resolvedPath' requires an interactive review. Run ConvertTo-StepperScript in an interactive PowerShell session and choose Yes, No, All, or Quit for each candidate."
+                )
+                $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                    $exception,
+                    'CrossStepConversionReviewRequired',
+                    [System.Management.Automation.ErrorCategory]::InvalidOperation,
+                    $resolvedPath
+                )
+                $PSCmdlet.ThrowTerminatingError($errorRecord)
             }
             Write-Host ""
             switch -Regex ($answer.Trim().ToLower()) {
                 '^n(o)?$'   { <# skip #> }
                 '^a(ll)?$'  {
-                    foreach ($c in $candidates) { [void]$selected.Add($c) }
-                    break
+                    [void]$selected.Add($var)
+                    $convertAll = $true
                 }
-                '^q(uit)?$' { return }
+                '^q(uit)?$' {
+                    Write-Host 'Stepper stopped; no changes were made.' -ForegroundColor Gray
+                    return [PSCustomObject]@{
+                        Status          = 'Quit'
+                        Changed         = $false
+                        RerunRequired   = $false
+                        CandidateCount  = $candidates.Count
+                        ConvertedCount  = 0
+                        BackupPath      = $null
+                        TargetPath      = $resolvedPath
+                    }
+                }
                 default     { [void]$selected.Add($var) }  # y, empty, or anything else = yes
             }
         }
-    }
-
-    if ($selected.Count -eq 0) {
-        Write-Host 'No variables selected for conversion.' -ForegroundColor Gray
-        return
+        $reviewCompleted = $true
     }
 
     # Read script content (keep original for .bak)
@@ -150,8 +188,10 @@ function ConvertTo-StepperScript {
     # Collect all New-Step CommandAst nodes
     $newStepCalls = @($ast.FindAll({
         param($node)
-        $node -is [System.Management.Automation.Language.CommandAst] -and
-        $node.GetCommandName() -eq 'New-Step'
+        if ($node -isnot [System.Management.Automation.Language.CommandAst]) { return $false }
+        $name = $node.GetCommandName()
+        if ($name) { $name = ($name -split '\\')[-1] }
+        return $name -eq 'New-Step'
     }, $true))
 
     # Collect scriptblock bodies
@@ -208,18 +248,21 @@ function ConvertTo-StepperScript {
         }
     }
 
-    if ($occurrences.Count -eq 0) {
-        Write-Host 'No occurrences to rewrite.' -ForegroundColor Gray
-        return
-    }
-
     # Sort descending by StartOffset so back-to-front rewriting preserves offsets
     $sorted = @($occurrences | Sort-Object { $_.Extent.StartOffset } -Descending)
 
     $target = if ($OutputPath) { $OutputPath } else { $resolvedPath }
 
     if (-not $PSCmdlet.ShouldProcess($target, 'Convert cross-step variables to $Stepper.<Var>')) {
-        return
+        return [PSCustomObject]@{
+            Status          = 'Skipped'
+            Changed         = $false
+            RerunRequired   = $false
+            CandidateCount  = $candidates.Count
+            ConvertedCount  = 0
+            BackupPath      = $null
+            TargetPath      = $target
+        }
     }
 
     foreach ($v in $sorted) {
@@ -236,13 +279,9 @@ function ConvertTo-StepperScript {
         $content = $prefix + $replacement + $suffix
     }
 
-    # Ensure Start-Stepper is present. Start-Stepper initializes $Stepper before
-    # any unmanaged code runs, so a converted cross-step variable first assigned
-    # in unmanaged code is safe without a bootstrap initializer. Idempotent: skip
-    # if Start-Stepper (or its alias) is already present. Insert inside the first
-    # '#region Stepper ignore' block so the unmanaged-code scanner ignores it.
+    # A completed review always writes the sentinel, even when every candidate was declined.
     $nl = [System.Environment]::NewLine
-    if ($content -notmatch '\b(Start-Stepper|Initialize-Stepper)\b') {
+    if ($selected.Count -gt 0 -and $content -notmatch '\b(Start-Stepper|Initialize-Stepper)\b') {
         $scriptLines = $content -split '\r?\n'
         $insertIndex = Get-StepperInitInsertionIndex -ScriptPath $resolvedPath
         $newLines = @()
@@ -252,47 +291,119 @@ function ConvertTo-StepperScript {
         $content = $newLines -join $nl
     }
 
-    # Inject $StepperConversionComplete sentinel inside the #region Stepper ignore block
-    $endRegionPattern = '#endregion Stepper ignore'
-    $endRegionIndex = $content.IndexOf($endRegionPattern)
-
-    if ($endRegionIndex -ge 0) {
-        # Insert the sentinel on the line immediately before #endregion Stepper ignore
-        $content = $content.Substring(0, $endRegionIndex) +
-            '$StepperConversionComplete = $true' + $nl +
-            $content.Substring($endRegionIndex)
-    } else {
-        # No existing ignore region; create install guard + sentinel after param() block
+    if ($reviewCompleted) {
+        $sentinelTokens = $null
+        $sentinelErrors = $null
         $sentinelAst = [System.Management.Automation.Language.Parser]::ParseInput(
-            $content, [ref]$null, [ref]$null
+            $content, [ref]$sentinelTokens, [ref]$sentinelErrors
         )
+        $sentinelAssignments = @($sentinelAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            $node.Left.VariablePath.UserPath -eq 'StepperConversionComplete'
+        }, $false))
 
-        $insertOffset = if ($sentinelAst.ParamBlock) {
-            $sentinelAst.ParamBlock.Extent.EndOffset
+        if ($sentinelAssignments.Count -gt 0) {
+            foreach ($assignment in @($sentinelAssignments | Sort-Object { $_.Right.Extent.StartOffset } -Descending)) {
+                $content = $content.Substring(0, $assignment.Right.Extent.StartOffset) +
+                    '$true' +
+                    $content.Substring($assignment.Right.Extent.EndOffset)
+            }
         } else {
-            # No param block; insert before the first top-level statement
-            $firstStatement = @($sentinelAst.EndBlock.Statements) | Select-Object -First 1
-            if ($firstStatement) { $firstStatement.Extent.StartOffset } else { $content.Length }
-        }
+            $endRegionToken = @($sentinelTokens | Where-Object {
+                $_.Kind -eq [System.Management.Automation.Language.TokenKind]::Comment -and
+                $_.Text.Trim() -match '(?i)^#endregion\s+Stepper\s+ignore\s*$'
+            } | Select-Object -First 1)
+            $endRegionIndex = if ($endRegionToken) { $endRegionToken[0].Extent.StartOffset } else { -1 }
 
-        $installGuard = $nl +
-            '#region Stepper ignore' + $nl +
-            "if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }" + $nl +
-            '$StepperConversionComplete = $true' + $nl +
-            '#endregion Stepper ignore' + $nl
-        $content = $content.Substring(0, $insertOffset) +
-            $installGuard +
-            $content.Substring($insertOffset)
+            if ($endRegionIndex -ge 0) {
+                $content = $content.Substring(0, $endRegionIndex) +
+                    '$StepperConversionComplete = $true' + $nl +
+                    $content.Substring($endRegionIndex)
+            } else {
+                $insertOffset = if ($sentinelAst.ParamBlock) {
+                    $sentinelAst.ParamBlock.Extent.EndOffset
+                } else {
+                    $firstStatement = @($sentinelAst.EndBlock.Statements) | Select-Object -First 1
+                    if ($firstStatement) { $firstStatement.Extent.StartOffset } else { $content.Length }
+                }
+
+                $installGuard = $nl +
+                    '#region Stepper ignore' + $nl +
+                    "if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }" + $nl +
+                    '$StepperConversionComplete = $true' + $nl +
+                    '#endregion Stepper ignore' + $nl
+                $content = $content.Substring(0, $insertOffset) +
+                    $installGuard +
+                    $content.Substring($insertOffset)
+            }
+        }
     }
 
+    $backupPath = $null
     if ($OutputPath) {
-        # Write to output path only; source untouched, no .bak
         [System.IO.File]::WriteAllText($OutputPath, $content, [System.Text.Encoding]::UTF8)
     } else {
-        # In-place: backup then overwrite source
-        New-StepperBackup -Path $resolvedPath | Out-Null
-        [System.IO.File]::WriteAllText($resolvedPath, $content, [System.Text.Encoding]::UTF8)
+        try {
+            $backupPath = New-StepperBackup -Path $resolvedPath -ErrorAction Stop
+            if (-not $backupPath -or -not (Test-Path -LiteralPath $backupPath)) {
+                throw "Backup was not created for '$resolvedPath'."
+            }
+        }
+        catch {
+            $exception = [System.IO.IOException]::new(
+                "Failed to create a backup for '$resolvedPath'. The script was not changed.",
+                $_.Exception
+            )
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ConversionBackupFailed',
+                [System.Management.Automation.ErrorCategory]::WriteError,
+                $resolvedPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+
+        try {
+            [System.IO.File]::WriteAllText($resolvedPath, $content, [System.Text.Encoding]::UTF8)
+        }
+        catch {
+            $exception = [System.IO.IOException]::new(
+                "Failed to write converted script '$resolvedPath'. Backup: '$backupPath'.",
+                $_.Exception
+            )
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new(
+                $exception,
+                'ConversionWriteFailed',
+                [System.Management.Automation.ErrorCategory]::WriteError,
+                $resolvedPath
+            )
+            $PSCmdlet.ThrowTerminatingError($errorRecord)
+        }
+
+        $statePath = Get-StepperStatePath -ScriptPath $resolvedPath
+        Remove-StepperState -StatePath $statePath -ErrorAction Stop
     }
 
-    Write-Host "Converted $($occurrences.Count) occurrence(s) in '$target'." -ForegroundColor Green
+    if ($selected.Count -eq 0) {
+        Write-Host "Cross-step variable review completed for '$target'; no candidates were converted." -ForegroundColor Green
+    } else {
+        Write-Host "Converted $($occurrences.Count) occurrence(s) in '$target'." -ForegroundColor Green
+    }
+
+    if (-not $OutputPath) {
+        Write-Host "Backup: $backupPath" -ForegroundColor Gray
+        Write-Host "Please re-run $(Split-Path $resolvedPath -Leaf)." -ForegroundColor Green
+    }
+
+    return [PSCustomObject]@{
+        Status          = if ($OutputPath) { 'WrittenToOutput' } else { 'RerunRequired' }
+        Changed         = $true
+        RerunRequired   = -not [bool]$OutputPath
+        CandidateCount  = $candidates.Count
+        ConvertedCount  = $selected.Count
+        BackupPath      = $backupPath
+        TargetPath      = $target
+    }
 }

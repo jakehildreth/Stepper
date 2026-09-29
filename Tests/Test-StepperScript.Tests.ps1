@@ -3,7 +3,9 @@ BeforeAll {
     . "$ModulePath/Private/Get-ScriptHash.ps1"
     . "$ModulePath/Private/Get-ScriptAst.ps1"
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
+    . "$ModulePath/Private/Get-StepperFindingCatalog.ps1"
     . "$ModulePath/Private/New-StepperIssue.ps1"
+    . "$ModulePath/Private/Get-StepperScriptFindings.ps1"
     . "$ModulePath/Private/Get-StepperInitInsertionIndex.ps1"
     . "$ModulePath/Public/Test-StepperScript.ps1"
 
@@ -196,69 +198,6 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
         }
     }
 
-    Context 'MissingCbh (Warning)' {
-        It 'Should report MissingCbh when script has no comment-based help' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Contain 'MissingCbh'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-
-        It 'MissingCbh issue should have Severity = Warning' {
-            # Arrange
-            $path = New-TempScript @(
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $issue = $result.Issues | Where-Object Code -EQ 'MissingCbh'
-                $issue.Severity | Should -Be 'Warning'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-
-        It 'Should not report MissingCbh when .SYNOPSIS is present' {
-            # Arrange
-            $path = New-TempScript @(
-                '<#'
-                '.SYNOPSIS'
-                '    Has help.'
-                '#>'
-                '[CmdletBinding()]'
-                'param()'
-                'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'New-Step { Write-Host "hi" }'
-                'Stop-Stepper'
-            )
-            try {
-                # Act
-                $result = Test-StepperScript -ScriptPath $path
-                # Assert
-                $codes = $result.Issues | Select-Object -ExpandProperty Code
-                $codes | Should -Not -Contain 'MissingCbh'
-            }
-            finally { Remove-Item $path -ErrorAction SilentlyContinue }
-        }
-    }
-
     Context 'MissingStopStepper (Warning)' {
         It 'Should report MissingStopStepper when Stop-Stepper is absent' {
             # Arrange
@@ -297,7 +236,7 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
         }
     }
 
-    Context 'NoSteps (Warning)' {
+    Context 'NoSteps (Error)' {
         It 'Should report NoSteps when script has no New-Step calls' {
             # Arrange
             $path = New-TempScript @(
@@ -316,7 +255,7 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
 
-        It 'NoSteps issue should have Severity = Warning' {
+        It 'NoSteps issue should have Severity = Error' {
             # Arrange
             $path = New-TempScript @(
                 '[CmdletBinding()]'
@@ -329,7 +268,7 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
                 $result = Test-StepperScript -ScriptPath $path
                 # Assert
                 $issue = $result.Issues | Where-Object Code -EQ 'NoSteps'
-                $issue.Severity | Should -Be 'Warning'
+                $issue.Severity | Should -Be 'Error'
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
@@ -358,13 +297,16 @@ Describe 'Test-StepperScript' -Tag 'Unit' {
             $path = New-TempScript @(
                 '[CmdletBinding()]'
                 'param()'
+                '#region Stepper ignore'
                 'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }'
-                'Stop-Stepper'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                'New-Step { Write-Host "hi" }'
             )
             try {
                 # Act
                 $result = Test-StepperScript -ScriptPath $path
-                # Assert - only NoSteps warning present, no errors
+                # Assert - MissingStopStepper is a warning only
                 $result.IsValid | Should -BeTrue
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
@@ -469,7 +411,7 @@ Describe 'MissingStartStepper rule' -Tag 'Unit' {
             $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
         }
 
-        It 'Does not flag a script with no New-Step calls' {
+        It 'Does not cascade Stepper findings for a script with no lifecycle command' {
             $path = New-TempScript @(
                 '<#'
                 '.SYNOPSIS'
@@ -479,8 +421,251 @@ Describe 'MissingStartStepper rule' -Tag 'Unit' {
                 'param()'
                 'Write-Host "no steps here"'
             )
-            $result = Test-StepperScript -ScriptPath $path
-            $result.Issues | Where-Object Code -EQ 'MissingStartStepper' | Should -BeNullOrEmpty
+            try {
+                $result = Test-StepperScript -ScriptPath $path
+                $result.Issues.Code | Should -Be @('NotStepperScript')
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
+    }
+}
+
+Describe 'Canonical Stepper finding catalog' -Tag 'Unit' {
+    It 'Contains every approved finding exactly once' {
+        $expected = @(
+            'NotStepperScript', 'ParseError', 'MissingParamBlock', 'MissingCmdletBinding',
+            'MissingInstallGuard', 'InvalidInstallGuard', 'MisplacedInstallGuard',
+            'MissingBootstrapRegion', 'MalformedIgnoreRegion', 'MissingStartStepper',
+            'DuplicateStartStepper', 'NestedStartStepper', 'StartOutsideBootstrapRegion',
+            'StartBeforeInstallGuard', 'StartAfterExecutableCode', 'NoSteps',
+            'NestedNewStep', 'MissingStepScriptBlock', 'NewStepBeforeStart',
+            'NewStepAfterStop', 'DuplicateStopStepper', 'NestedStopStepper',
+            'ExecutableCodeAfterStop', 'UnmanagedCode', 'MissingStopStepper'
+        )
+        $catalog = Get-StepperFindingCatalog
+        @($catalog.Keys) | Should -HaveCount $expected.Count
+        foreach ($code in $expected) { $catalog.Contains($code) | Should -BeTrue }
+    }
+
+    It 'Returns location and remediation properties on every finding' {
+        $path = New-TempScript @('Stop-Stepper')
+        try {
+            $result = Test-StepperScript -ScriptPath $path
+            foreach ($issue in $result.Issues) {
+                $issue.PSObject.Properties.Name | Should -Contain 'Location'
+                $issue.PSObject.Properties.Name | Should -Contain 'Remediation'
+                $issue.Remediation | Should -BeIn @('None', 'Deterministic', 'Interactive')
+            }
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+}
+
+Describe 'Canonical structural findings' -Tag 'Unit' {
+    It 'Returns only located ParseError findings when parsing fails' {
+        $path = New-TempScript @('Start-Stepper', 'if (')
+        try {
+            $result = Test-StepperScript -ScriptPath $path
+            $result.Issues.Code | Select-Object -Unique | Should -Be @('ParseError')
+            $result.Issues[0].Location.StartLine | Should -BeGreaterThan 0
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Detects malformed nested Stepper-ignore regions' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()',
+            '#region Stepper ignore', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore', '#endregion Stepper ignore',
+            'New-Step { }', 'Stop-Stepper'
+        )
+        try {
+            (Test-StepperScript $path).Issues.Code | Should -Contain 'MalformedIgnoreRegion'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Detects duplicate and nested Start calls' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'if ($true) { Initialize-Stepper }', 'New-Step { }', 'Stop-Stepper'
+        )
+        try {
+            $codes = (Test-StepperScript $path).Issues.Code
+            $codes | Should -Contain 'DuplicateStartStepper'
+            $codes | Should -Contain 'NestedStartStepper'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Detects a Start call outside the bootstrap region' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            '#endregion Stepper ignore', 'Start-Stepper', 'New-Step { }', 'Stop-Stepper'
+        )
+        try {
+            (Test-StepperScript $path).Issues.Code | Should -Contain 'StartOutsideBootstrapRegion'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Detects nested and scriptblock-less New-Step calls' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'if ($true) { New-Step }', 'Stop-Stepper'
+        )
+        try {
+            $codes = (Test-StepperScript $path).Issues.Code
+            $codes | Should -Contain 'NestedNewStep'
+            $codes | Should -Contain 'MissingStepScriptBlock'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Reports only specific findings for New-Step and executable code after Stop' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'New-Step { }', 'Stop-Stepper', 'Write-Host "after"', 'New-Step { }'
+        )
+        try {
+            $result = Test-StepperScript $path
+            @($result.Issues | Where-Object Code -EQ 'NewStepAfterStop') | Should -HaveCount 1
+            @($result.Issues | Where-Object Code -EQ 'ExecutableCodeAfterStop') | Should -HaveCount 1
+            $result.Issues.Code | Should -Not -Contain 'MisplacedStopStepper'
+            @($result.Issues | Where-Object Code -EQ 'UnmanagedCode') | Should -HaveCount 0
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Reports one ordering finding when New-Step follows Stop-Stepper' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'New-Step { }', 'Stop-Stepper', 'New-Step { }'
+        )
+        try {
+            $orderingIssues = @((Test-StepperScript $path).Issues | Where-Object Code -In 'NewStepAfterStop', 'MisplacedStopStepper')
+            $orderingIssues | Should -HaveCount 1
+            $orderingIssues[0].Code | Should -Be 'NewStepAfterStop'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Detects duplicate and nested Stop calls' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'New-Step { Stop-Stepper }', 'Stop-Stepper', 'Stop-Stepper'
+        )
+        try {
+            $codes = (Test-StepperScript $path).Issues.Code
+            $codes | Should -Contain 'NestedStopStepper'
+            $codes | Should -Contain 'DuplicateStopStepper'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Returns one located UnmanagedCode finding for adjacent root statements' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore',
+            'Write-Host "one"', '', '# comment', 'Write-Host "two"',
+            'New-Step { }', 'Stop-Stepper'
+        )
+        try {
+            $issues = @((Test-StepperScript $path).Issues | Where-Object Code -EQ 'UnmanagedCode')
+            $issues | Should -HaveCount 1
+            $issues[0].Location.StartLine | Should -Be 7
+            $issues[0].Location.EndLine | Should -Be 10
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Rejects an install command in an else branch or a non-negated availability branch' {
+        foreach ($guard in @(
+            'if (-not (Get-Module Stepper)) { Write-Host absent } else { Install-Module Stepper }',
+            'if ((Get-Module Stepper) -and -not $false) { Install-Module Stepper }'
+        )) {
+            $path = New-TempScript @(
+                '[CmdletBinding()]', 'param()', '#region Stepper ignore', $guard,
+                'Start-Stepper', '#endregion Stepper ignore', 'New-Step { }', 'Stop-Stepper'
+            )
+            try { (Test-StepperScript $path).Issues.Code | Should -Contain 'InvalidInstallGuard' }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It 'Rejects a guard whose boolean condition can install while Stepper is available' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if ((-not (Get-Module Stepper)) -or $true) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore', 'New-Step { }', 'Stop-Stepper'
+        )
+        try { (Test-StepperScript $path).Issues.Code | Should -Contain 'InvalidInstallGuard' }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Treats lifecycle commands in mixed pipelines as nested and preserves unmanaged code findings' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Write-Output x | Start-Stepper', '#endregion Stepper ignore',
+            'New-Step { } | Write-Output', 'Stop-Stepper | Write-Output'
+        )
+        try {
+            $codes = (Test-StepperScript $path).Issues.Code
+            $codes | Should -Contain 'NestedStartStepper'
+            $codes | Should -Contain 'NestedNewStep'
+            $codes | Should -Contain 'NestedStopStepper'
+            $codes | Should -Contain 'UnmanagedCode'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Recognizes module-qualified lifecycle commands' {
+        $path = New-TempScript @(
+            '<#', '.SYNOPSIS', 's', '#>', '[CmdletBinding()]', 'param()',
+            '#region Stepper ignore',
+            'if (-not (Microsoft.PowerShell.Core\Get-Module Stepper)) { PowerShellGet\Install-Module Stepper -Force }',
+            'Stepper\Start-Stepper', '#endregion Stepper ignore',
+            'Stepper\New-Step { }', 'Stepper\Stop-Stepper'
+        )
+        try { (Test-StepperScript $path).IsValid | Should -BeTrue }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Reports a valid guard as misplaced when executable code precedes it' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', 'Write-Host before', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore', 'New-Step { }', 'Stop-Stepper'
+        )
+        try { (Test-StepperScript $path).Issues.Code | Should -Contain 'MisplacedInstallGuard' }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
+    }
+
+    It 'Does not report MissingStopStepper when a nested Stop call is present' {
+        $path = New-TempScript @(
+            '[CmdletBinding()]', 'param()', '#region Stepper ignore',
+            'if (-not (Get-Module Stepper)) { Install-Module Stepper -Force }',
+            'Start-Stepper', '#endregion Stepper ignore', 'New-Step { Stop-Stepper }'
+        )
+        try {
+            $codes = (Test-StepperScript $path).Issues.Code
+            $codes | Should -Contain 'NestedStopStepper'
+            $codes | Should -Not -Contain 'MissingStopStepper'
+        }
+        finally { Remove-Item $path -ErrorAction SilentlyContinue }
     }
 }

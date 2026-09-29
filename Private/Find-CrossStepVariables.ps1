@@ -65,8 +65,10 @@ function Find-CrossStepVariables {
     # Collect all New-Step CommandAst nodes in document order
     $newStepCalls = @($ast.FindAll({
         param($node)
-        $node -is [System.Management.Automation.Language.CommandAst] -and
-        $node.GetCommandName() -eq 'New-Step'
+        if ($node -isnot [System.Management.Automation.Language.CommandAst]) { return $false }
+        $name = $node.GetCommandName()
+        if ($name) { $name = ($name -split '\\')[-1] }
+        return $name -eq 'New-Step'
     }, $true) | Sort-Object { $_.Extent.StartLineNumber })
 
     if ($newStepCalls.Count -lt 1) {

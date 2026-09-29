@@ -18,7 +18,10 @@ BeforeAll {
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Find-CrossStepVariables.ps1"
     . "$ModulePath/Private/Get-StepperInitInsertionIndex.ps1"
+    . "$ModulePath/Private/Get-StepperStatePath.ps1"
     . "$ModulePath/Private/New-StepperBackup.ps1"
+    . "$ModulePath/Private/Read-StepperChoice.ps1"
+    . "$ModulePath/Private/Remove-StepperState.ps1"
     . "$ModulePath/Private/Test-StepperConversionComplete.ps1"
     . "$ModulePath/Public/ConvertTo-StepperScript.ps1"
 
@@ -114,9 +117,11 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             $path = New-TempScript ($NoCanidatesScript -split [System.Environment]::NewLine)
             $originalContent = Get-Content -Path $path -Raw
             try {
-                ConvertTo-StepperScript -Path $path -Force
+                $result = ConvertTo-StepperScript -Path $path -Force
                 $newContent = Get-Content -Path $path -Raw
                 $newContent | Should -Be $originalContent
+                $result.Status | Should -Be 'NoCandidates'
+                $result.RerunRequired | Should -BeFalse
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
@@ -128,6 +133,66 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             try {
                 ConvertTo-StepperScript -Path $path -Force
                 @(Get-ChildItem -Path $dir -Filter "$base.*.ps1.bak") | Should -HaveCount 0
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+    }
+
+    Context 'Interactive review lifecycle' {
+        BeforeEach {
+            $script:__StepperTestResponses = [System.Collections.Generic.Queue[string]]::new()
+        }
+
+        AfterEach {
+            Remove-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
+        }
+
+        It 'Should write the sentinel and require rerun when every candidate is declined' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            $originalContent = Get-Content -Path $path -Raw
+            $script:__StepperTestResponses.Enqueue('n')
+            $script:__StepperTestResponses.Enqueue('n')
+            try {
+                $result = ConvertTo-StepperScript -Path $path
+                $content = Get-Content -Path $path -Raw
+
+                $result.Status | Should -Be 'RerunRequired'
+                $result.RerunRequired | Should -BeTrue
+                $result.ConvertedCount | Should -Be 0
+                $content | Should -Match '\$StepperConversionComplete\s*=\s*\$true'
+                $content | Should -Match '\$servers'
+                $content | Should -Not -Match '\$Stepper\.Servers'
+                Get-Content -LiteralPath $result.BackupPath -Raw | Should -Be $originalContent
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-TempBaks $path
+            }
+        }
+
+        It 'Should write nothing when the user quits' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            $originalContent = Get-Content -Path $path -Raw
+            $script:__StepperTestResponses.Enqueue('q')
+            try {
+                $result = ConvertTo-StepperScript -Path $path
+
+                $result.Status | Should -Be 'Quit'
+                $result.Changed | Should -BeFalse
+                Get-Content -Path $path -Raw | Should -Be $originalContent
+                @(Get-ChildItem -Path (Split-Path $path -Parent) -Filter "$([System.IO.Path]::GetFileNameWithoutExtension($path)).*.ps1.bak") |
+                    Should -HaveCount 0
+            }
+            finally { Remove-Item $path -ErrorAction SilentlyContinue }
+        }
+
+        It 'Should fail actionably when review input is unavailable' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            Mock Read-StepperChoice { '__StepperNonInteractive__' }
+            try {
+                { ConvertTo-StepperScript -Path $path } |
+                    Should -Throw -ErrorId 'CrossStepConversionReviewRequired*'
+                (Get-Content -Path $path -Raw) | Should -Not -Match '\$StepperConversionComplete'
             }
             finally { Remove-Item $path -ErrorAction SilentlyContinue }
         }
@@ -244,6 +309,25 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             }
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-TempBaks $path
+            }
+        }
+
+        It 'Should remove stale state and return the backup path with a rerun signal' {
+            $path = New-TempScript ($CrossStepScript -split [System.Environment]::NewLine)
+            $statePath = Get-StepperStatePath -ScriptPath $path
+            Set-Content -LiteralPath $statePath -Value '{"stale":true}'
+            try {
+                $result = ConvertTo-StepperScript -Path $path -Force
+
+                $result.RerunRequired | Should -BeTrue
+                $result.Status | Should -Be 'RerunRequired'
+                Test-Path -LiteralPath $result.BackupPath | Should -BeTrue
+                Test-Path -LiteralPath $statePath | Should -BeFalse
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-Item $statePath -ErrorAction SilentlyContinue
                 Remove-TempBaks $path
             }
         }
@@ -452,6 +536,30 @@ Describe 'ConvertTo-StepperScript' -Tag 'Unit' {
             finally {
                 Remove-Item $path -ErrorAction SilentlyContinue
                 Remove-Item "$path.bak" -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Should replace an existing false sentinel when review completes' {
+            $scriptWithFalseSentinel = @(
+                '[CmdletBinding()]'
+                'param()'
+                '#region Stepper ignore'
+                '$StepperConversionComplete = $false'
+                '#endregion Stepper ignore'
+                'New-Step { $value = 1 }'
+                'New-Step { Write-Host $value }'
+                'Stop-Stepper'
+            ) -join [System.Environment]::NewLine
+            $path = New-TempScript ($scriptWithFalseSentinel -split [System.Environment]::NewLine)
+            try {
+                ConvertTo-StepperScript -Path $path -Force
+                $result = Get-Content -Path $path -Raw
+                $result | Should -Match '\$StepperConversionComplete\s*=\s*\$true'
+                $result | Should -Not -Match '\$StepperConversionComplete\s*=\s*\$false'
+            }
+            finally {
+                Remove-Item $path -ErrorAction SilentlyContinue
+                Remove-TempBaks $path
             }
         }
 

@@ -47,10 +47,6 @@ function New-Step {
         ScriptBlock may execute up to 6 times total (1 initial + 5 retries). Defaults to 5.
         Requires -Retry. Minimum value: 1.
 
-    .PARAMETER SkipRequirementsCheck
-        Suppresses the automatic check for '#requires -Modules Stepper' and '[CmdletBinding()]'
-        declarations. Use when you intentionally manage those declarations yourself.
-
     .EXAMPLE
         New-Step 'Download Files' {
             Write-Host "Downloading files..."
@@ -100,7 +96,7 @@ function New-Step {
         [ValidateRange(1, [int]::MaxValue)]
         [int]$MaxRetries = 5,
 
-        [Parameter()]
+        [Parameter(DontShow)]
         [switch]$SkipRequirementsCheck
     )
 

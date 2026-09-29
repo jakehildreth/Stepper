@@ -30,11 +30,19 @@ Describe 'Read-StepperChoice' -Tag 'Unit' {
     }
 
     Context 'No hook' {
-        It 'Falls back to Read-Host when no queue is set' {
+        It 'Falls back to Read-Host when no queue is set' -Skip:([Console]::IsInputRedirected) {
             Remove-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
             Mock Read-Host { 'x' }
 
             Read-StepperChoice | Should -Be 'x'
+        }
+
+        It 'Returns the non-interactive default when standard input is redirected' -Skip:(-not [Console]::IsInputRedirected) {
+            Remove-Variable -Name '__StepperTestResponses' -Scope Script -ErrorAction SilentlyContinue
+            Mock Read-Host { throw 'Read-Host should not be called for redirected input' }
+
+            Read-StepperChoice -NonInteractiveDefault 's' | Should -Be 's'
+            Should -Invoke Read-Host -Times 0 -Exactly
         }
 
         It 'Returns the non-interactive default when Read-Host throws' {

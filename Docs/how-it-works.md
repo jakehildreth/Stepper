@@ -1,15 +1,18 @@
 # How It Works
 
-## First Run Script Validation
+## Script Integrity Pipeline
 
-Before executing any steps, Stepper validates the script:
+Before Stepper creates or reads runtime state, `Start-Stepper` runs this pipeline:
 
-1. Checks for `[CmdletBinding()]` and the self-install guard independently. Each component is silently injected if missing. The guard is wrapped in `#region Stepper ignore` so it won't trigger unmanaged-code warnings on the next run. No prompt, no `#Requires` statement added.
-2. Scans for unmanaged code between `New-Step` blocks then prompts per block: Wrap / Mark / Delete / Ignore
-3. Checks that `Stop-Stepper` appears at the end
-4. If the `$StepperConversionComplete` sentinel is absent, invokes `ConvertTo-StepperScript` to detect and migrate cross-step variables to `$Stepper.<Var>` notation. On completion, ConvertTo injects `$StepperConversionComplete = $true` inside `#region Stepper ignore`. The hook is skipped on all subsequent runs.
+1. `Test-StepperScript` parses the complete Stepper script and returns canonical findings.
+2. Parse errors stop execution. Safe missing structure is added in one deterministic repair transaction.
+3. Remaining structural Errors stop execution, except `NoSteps`, which is deferred until unmanaged code can be wrapped into the first `New-Step`.
+4. Misplaced or duplicate Start calls are handled before unmanaged code.
+5. Unmanaged code is handled with Wrap / Mark ignored / Delete / Ignore / Quit.
+6. `NoSteps` is enforced, then missing `Stop-Stepper` is offered as Add / Continue / Quit.
+7. Cross-step variable conversion is the final rewrite-capable phase.
 
-If the script is modified by any of the above, Stepper writes the changes and asks you to re-run.
+A rewrite creates one backup, writes once, removes stale state, and exits with code `75`. Run the script again to continue. `$Stepper`, the script hash, step inventory, and saved state are not initialized until the pipeline finishes without a rewrite or unresolved Error.
 
 ## Normal Execution
 
@@ -54,13 +57,25 @@ Selecting `[M]` shows:
 
 When `Read-Host` is unavailable (CI/CD, remoting, unattended runs), Stepper falls back to safe defaults:
 
-| Prompt | Default |
+| Situation | Behavior |
 |---|---|
-| Missing `[CmdletBinding()]` | Silent auto-inject (always; no prompt) |
-| Unmanaged code | Wrap |
+| Missing required structure | Repair, remove stale state, exit `75` |
+| Misplaced or duplicate Start call | Fail without rewriting |
+| Unmanaged code | Wrap, remove stale state, exit `75` |
+| Unresolved `NoSteps` | Fail |
+| Missing `Stop-Stepper` | Warn and continue |
+| Cross-step variable candidates | Fail and require interactive review |
 | Resume, script unchanged | Resume |
 | Resume, script modified | Start over |
-| Cross-step variable conversion | Convert all |
+| Malformed or inconsistent state | Fail |
+
+## Migration and Compatibility
+
+`Start-Stepper` now owns validation, repair orchestration, conversion review, and runtime-state initialization. `New-Step` only executes managed step blocks and requires successful initialization first.
+
+Existing scripts can keep passing `-SkipRequirementsCheck` to `Start-Stepper` or `New-Step`; the hidden parameter remains accepted for compatibility but is now a no-op. The integrity pipeline cannot be bypassed. Scripts that previously relied on silent first-step injection should expect an early backup and exit code `75`, then rerun from the rewritten source.
+
+Because rewrite exits must stop the script without terminating the caller's interactive session, invoke Stepper scripts with `& ./Script.ps1` or `./Script.ps1`, not dot-sourcing.
 
 ## Verbose Output
 

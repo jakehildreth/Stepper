@@ -34,7 +34,7 @@ function Get-StepInventory {
     # Find Stop-Stepper to determine the cutoff line
     $stopCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'Stop-Stepper'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'Stop-Stepper'
     }, $true)
 
     $stopLine = if ($stopCalls -and $stopCalls.Count -gt 0) {
@@ -48,7 +48,7 @@ function Get-StepInventory {
 
     $newStepCalls = $ast.FindAll({
         $args[0] -is [System.Management.Automation.Language.CommandAst] -and
-        $args[0].GetCommandName() -eq 'New-Step'
+        (($args[0].GetCommandName() -split '\\')[-1]) -eq 'New-Step'
     }, $true) | Sort-Object { $_.Extent.StartLineNumber }
 
     foreach ($call in $newStepCalls) {

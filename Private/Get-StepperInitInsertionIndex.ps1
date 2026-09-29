@@ -14,8 +14,7 @@ function Get-StepperInitInsertionIndex {
         initializer goes immediately after the param() block (or before the first
         statement when there is no param block).
 
-        Shared by ConvertTo-StepperScript and Repair-StepperScript so both insert the
-        initializer in the same place.
+        Used by ConvertTo-StepperScript when conversion must add the initializer.
 
     .PARAMETER ScriptPath
         Path to the script file to analyze.

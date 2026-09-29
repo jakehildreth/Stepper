@@ -5,8 +5,8 @@ function Test-StepperConversionComplete {
 
     .DESCRIPTION
         AST-scans the specified script for a top-level assignment to
-        $StepperConversionComplete. Used by New-Step's first-run hook to determine
-        whether ConvertTo-StepperScript has already been offered for this script.
+        $StepperConversionComplete. Used by the script-integrity lifecycle to
+        determine whether conversion review has already been completed.
 
         The scan is restricted to the top-level script scope
         (searchNestedScriptBlocks = $false) so a sentinel inside a New-Step
@@ -32,9 +32,19 @@ function Test-StepperConversionComplete {
 
     $sentinel = @($ast.FindAll({
         param($node)
-        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-        $node.Left.VariablePath.UserPath -eq 'StepperConversionComplete'
+        if ($node -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $node.Left -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
+            $node.Left.VariablePath.UserPath -ne 'StepperConversionComplete') {
+            return $false
+        }
+
+        $rightVariables = @($node.Right.FindAll({
+            param($rightNode)
+            $rightNode -is [System.Management.Automation.Language.VariableExpressionAst]
+        }, $true))
+        return $rightVariables.Count -eq 1 -and
+            $rightVariables[0].VariablePath.UserPath -eq 'true' -and
+            $node.Right.Extent.Text.Trim() -eq '$true'
     }, $false))  # $false = top-level scope only; does not descend into nested scriptblocks
 
     return $sentinel.Count -gt 0
