@@ -982,7 +982,25 @@ if ($Host.Name -eq 'Windows PowerShell ISE Host') {
 }
 
 # Manually added after PX2PS generation: display the module version under the logo.
-# $StepperVersion is set by Stepper.psm1 before this file is dot-sourced.
+# Show-Logo only runs during module import, when SessionState.Module.Version still
+# reports 0.0 (the manifest is linked after the root module executes). So the version
+# is read from the manifest file instead. The manifest sits next to this file in the
+# merged build (PSPublishModule flattens Private/) and one directory up in the repo.
+$StepperVersion = $null
+$manifestCandidates = @(
+    (Join-Path -Path $PSScriptRoot -ChildPath 'Stepper.psd1'),
+    (Join-Path -Path (Join-Path -Path $PSScriptRoot -ChildPath '..') -ChildPath 'Stepper.psd1')
+)
+foreach ($manifestPath in $manifestCandidates) {
+    if (Test-Path -Path $manifestPath) {
+        try {
+            $StepperVersion = (Import-PowerShellDataFile -Path $manifestPath).ModuleVersion
+        } catch {
+            # Version display is cosmetic; continue without it
+        }
+        break
+    }
+}
 if ($StepperVersion) {
     Write-Host ("v{0}" -f $StepperVersion).PadLeft($width)
 }

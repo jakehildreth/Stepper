@@ -3,12 +3,9 @@
 . $PSScriptRoot\Private\Get-StepperConfigPath.ps1
 . $PSScriptRoot\Private\Get-StepperConfig.ps1
 
-$StepperVersion = $null
-try {
-    $StepperVersion = (Import-PowerShellDataFile -Path $PSScriptRoot\Stepper.psd1).ModuleVersion
-} catch {
-    # Version display is cosmetic; continue without it
-}
+
+# Version display for the splash is resolved inside Private\Show-Logo.ps1:
+# PSPublishModule's merge strips this header, so it cannot set variables for it.
 
 $StepperConfig = Get-StepperConfig
 if ($StepperConfig.ShowLogo -ne $false) {
