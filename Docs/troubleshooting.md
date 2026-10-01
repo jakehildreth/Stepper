@@ -1,5 +1,16 @@
 # Troubleshooting
 
+**Stepper fails with `StartStepperNotRun` ("Start-Stepper has not run for ...")**
+
+`New-Step` was called without `Start-Stepper` initializing the run first. This is the most common breakage for scripts written before `Start-Stepper` existed. Fix: add the canonical bootstrap block at the top of the script, after `param()`:
+
+```powershell
+#region Stepper ignore
+if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }
+Start-Stepper
+#endregion Stepper ignore
+```
+
 **Stepper exits with code 75**
 
 Stepper changed the Stepper script successfully, but did not run its managed code. A backup was created and stale state was removed. Run the script again.
@@ -44,7 +55,7 @@ Create `config.json` in the Stepper config directory (`$env:XDG_CONFIG_HOME/step
 
 **Stepper fails with `TranscriptAlreadyActive`**
 
-A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an enterprise runbook). Call `Stop-Transcript` before running the script, or use `-NoLog` on all steps to disable logging entirely.
+A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an enterprise runbook). Call `Stop-Transcript` before running the script, or add `-NoLog` to your steps and choose `[s]` or `[d]` at the scope prompt. `-NoLog` alone is not enough: the default `[A]` ignores the flags and the check still throws. See [Logging](logging.md) for details.
 
 **`Read-Host` prompts and responses don't appear in the log file**
 

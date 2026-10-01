@@ -44,5 +44,3 @@ $logPath = Join-Path $PSScriptRoot 'output.log'
 $ErrorActionPreference = 'Stop'
 #endregion Stepper ignore
 ```
-
-If a flagged block references `$Stepper.*` variables, Stepper warns before offering Delete.
