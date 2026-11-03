@@ -15,6 +15,12 @@ function New-Step {
         removed from the caller's scope, and the previous run's log config is
         discarded, so the new run behaves as if no prior run happened.
 
+        Non-terminating errors never fail a step. When a step emits any, New-Step warns
+        with separate counts of surfaced and silenced-or-caught errors, writes full
+        details to scriptname.ps1.stepper.errors.log (skipped when logging is off for
+        the step), and saves the counts in the state file. A terminating error fails
+        the step and ends the script.
+
     .PARAMETER Name
         Optional name for this step. Displayed in verbose output and resume prompts.
 
@@ -312,7 +318,21 @@ function New-Step {
 
             try {
                 $attemptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                & $ScriptBlock
+
+                # Surfaced errors are redirected so they can be counted, then re-emitted.
+                # Records absent from $Error (native command stderr) pass through untouched.
+                $errorBaseline  = if ($global:Error.Count -gt 0) { $global:Error[0] } else { $null }
+                $surfacedErrors = [System.Collections.Generic.List[object]]::new()
+                & $ScriptBlock 2>&1 | ForEach-Object {
+                    if ($_ -is [System.Management.Automation.ErrorRecord] -and $global:Error.Contains($_)) {
+                        $surfacedErrors.Add($_)
+                        $PSCmdlet.WriteError($_)
+                    } else {
+                        $_
+                    }
+                }
+                $stepErrors = @(Get-StepperErrorDelta -Baseline $errorBaseline)
+
                 $attemptStopwatch.Stop()
                 $totalStopwatch.Stop()
                 $elapsed      = [Math]::Round($attemptStopwatch.Elapsed.TotalSeconds, 2)
@@ -327,6 +347,38 @@ function New-Step {
                     Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
                 }
 
+                #Region Non-terminating errors: warn, log details, collect counts for state
+                $surfacedCount = $surfacedErrors.Count
+                $silencedCount = [Math]::Max(0, $stepErrors.Count - $surfacedCount)
+                $stepErrorCounts = @()
+                if ($stepErrors.Count -gt 0) {
+                    $stepLabel = "Step $currentStepNumber/$totalSteps$stepDisplaySuffix"
+                    $countsText = "$surfacedCount surfaced, $silencedCount silenced or caught"
+                    $errorLogPath = $null
+                    if ($stepLoggingEnabled -and $stepLogPath) {
+                        $errorLogPath = Get-StepperErrorLogPath -LogPath $stepLogPath
+                        $chronologicalErrors = @($stepErrors)
+                        [System.Array]::Reverse($chronologicalErrors)
+                        Write-StepperErrorLog -ErrorRecord $chronologicalErrors -LogPath $errorLogPath -StepLabel $stepLabel
+                    }
+                    $detailsText = if ($errorLogPath) { " Details: $errorLogPath" } else { '' }
+                    Write-Warning "$stepLabel completed with non-terminating errors: $countsText.$detailsText"
+                    Write-StepperLog -Message "$stepLabel completed with non-terminating errors: $countsText ($displayStepId)" -Level 'WARN' -LogPath $stepLogPath
+
+                    $stepErrorCounts = @([PSCustomObject]@{
+                        StepId     = $stepId
+                        StepNumber = $currentStepNumber
+                        StepName   = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
+                        Surfaced   = $surfacedCount
+                        Silenced   = $silencedCount
+                    })
+                }
+                $existingErrorCounts = @()
+                $priorState = Read-StepperState -StatePath $statePath -ErrorAction SilentlyContinue
+                if ($priorState -and $priorState.ErrorCounts) {
+                    $existingErrorCounts = @($priorState.ErrorCounts | Where-Object { $_.StepId -ne $stepId })
+                }
+                #EndRegion Non-terminating errors
                 # Update state file after successful execution (including $Stepper data)
                 $stepperData = $callingScope.PSVariable.Get('Stepper').Value
                 # Persist state including the script contents for better change inspection
@@ -355,6 +407,7 @@ function New-Step {
                     LogPath           = $executionState.LogPath
                     LoggingEnabled    = if ($executionState.LoggingEnabled -is [bool]) { $executionState.LoggingEnabled } else { $true }
                     NoLogStepIds      = $executionState.NoLogStepIds
+                    ErrorCounts       = @($existingErrorCounts) + @($stepErrorCounts)
                 }
                 Write-StepperState @splatState
 

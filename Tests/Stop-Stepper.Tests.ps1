@@ -243,6 +243,93 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
         }
     }
 
+    Context 'Non-terminating error summary' {
+        BeforeEach {
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $modulePath = $ModulePath
+            $fakeUser   = $script:FakeUserScript
+            $frames = @(
+                [PSCustomObject]@{
+                    ScriptName       = "${modulePath}${sep}Public${sep}Stop-Stepper.ps1"
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                },
+                [PSCustomObject]@{
+                    ScriptName       = $fakeUser
+                    ScriptLineNumber = 1
+                    InvocationInfo   = [PSCustomObject]@{ BoundParameters = @{} }
+                }
+            )
+            Mock Get-PSCallStack -MockWith { $frames }.GetNewClosure()
+            Mock Write-StepperLog {}
+            Mock Write-Warning {}
+        }
+
+        It 'Warns with totals aggregated across all steps' {
+            $counts = @(
+                [PSCustomObject]@{ StepId = "${script:FakeUserScript}:1"; StepNumber = 1; StepName = 'One'; Surfaced = 2; Silenced = 1 }
+                [PSCustomObject]@{ StepId = "${script:FakeUserScript}:2"; StepNumber = 2; StepName = $null; Surfaced = 1; Silenced = 4 }
+            )
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:2" -ErrorCounts $counts
+
+            Stop-Stepper
+
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter {
+                $Message -match '2 step' -and $Message -match '3 surfaced' -and $Message -match '5 silenced or caught'
+            }
+        }
+
+        It 'Lists the counts for each affected step' {
+            $counts = @(
+                [PSCustomObject]@{ StepId = "${script:FakeUserScript}:1"; StepNumber = 1; StepName = 'One'; Surfaced = 2; Silenced = 1 }
+            )
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1" -ErrorCounts $counts
+
+            Stop-Stepper
+
+            Should -Invoke Write-Host -ParameterFilter {
+                "$Object" -match 'Step 1' -and "$Object" -match "'One'" -and "$Object" -match '2 surfaced' -and "$Object" -match '1 silenced or caught'
+            }
+        }
+
+        It 'Writes the summary to the log' {
+            $counts = @(
+                [PSCustomObject]@{ StepId = "${script:FakeUserScript}:1"; StepNumber = 1; StepName = $null; Surfaced = 2; Silenced = 1 }
+            )
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1" -ErrorCounts $counts
+
+            Stop-Stepper
+
+            Should -Invoke Write-StepperLog -ParameterFilter {
+                $Level -eq 'WARN' -and $Message -match '2 surfaced' -and $Message -match '1 silenced or caught'
+            }
+        }
+
+        It 'Shows no summary when no step emitted errors' {
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1"
+
+            Stop-Stepper
+
+            Should -Invoke Write-Warning -Exactly 0 -ParameterFilter { $Message -match 'surfaced' }
+        }
+
+        It 'Still removes the state file after showing the summary' {
+            $counts = @(
+                [PSCustomObject]@{ StepId = "${script:FakeUserScript}:1"; StepNumber = 1; StepName = $null; Surfaced = 1; Silenced = 0 }
+            )
+            Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
+                -LastCompletedStep "${script:FakeUserScript}:1" -ErrorCounts $counts
+
+            Stop-Stepper
+
+            $script:FakeStatePath | Should -Not -Exist
+        }
+    }
+
     Context 'Logging: reads LogPath from execution state' {
         BeforeEach {
             Write-StepperState -StatePath $script:FakeStatePath -ScriptHash 'abc123' `
