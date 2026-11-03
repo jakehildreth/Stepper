@@ -1014,6 +1014,39 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
+    Context 'Terminating errors end the script' {
+        BeforeAll {
+            $script:PwshPath = (Get-Process -Id $PID).Path
+            $script:ModuleManifest = Join-Path (Split-Path -Path $PSScriptRoot -Parent) 'Stepper.psd1'
+        }
+
+        It 'Does not run steps after a step that throws' {
+            $scriptPath = Join-Path $TestDrive "terminating-$(New-Guid).ps1"
+            $scriptLines = @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'one' { throw 'boom' }"
+                "New-Step 'two' { Write-Host 'SECOND-STEP-RAN' }"
+                ''
+                'Stop-Stepper'
+            )
+            Set-Content -Path $scriptPath -Value $scriptLines
+            $command = "Import-Module '$($script:ModuleManifest)'; & '$scriptPath'"
+
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'Step failed'
+            $output | Should -Not -Match 'SECOND-STEP-RAN'
+            (Get-StepperStatePath -ScriptPath $scriptPath) | Should -Not -Exist
+        }
+    }
+
     Context 'Start-Stepper sentinel' {
         It 'Throws StartStepperNotRun when the sentinel is absent' {
             $info = New-TestStepperScript

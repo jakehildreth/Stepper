@@ -410,7 +410,9 @@ function New-Step {
                         [System.Management.Automation.ErrorCategory]::OperationStopped,
                         $stepId
                     )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                    # throw, not ThrowTerminatingError: that is only statement-terminating
+                    # and the script would run on to the next step.
+                    throw $errorRecord
                 }
             }
             finally {
