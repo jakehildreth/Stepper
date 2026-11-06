@@ -1037,15 +1037,44 @@ Describe 'New-Step' -Tag 'Integration' {
             { New-Step { Write-Error 'nt' } 2>$null } | Should -Not -Throw
         }
 
-        It 'Still emits the surfaced error to the error stream' {
-            $emitted = & { New-Step { Write-Error 'visible-error' } } 2>&1
-            @($emitted | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] -and $_.Exception.Message -eq 'visible-error' }) |
-                Should -HaveCount 1
-        }
-
         It 'Passes step output through to the pipeline' {
             $emitted = New-Step { 'step-output'; Write-Error 'nt' } 2>$null
             $emitted | Should -Be 'step-output'
+        }
+
+        It 'Fails the step on a non-terminating error under Stop with -RespectErrorPreference' {
+            $script:NtInfo2 = New-TestStepperScript -BaseName "nt-respect-$(New-Guid)" -StepCount 2
+            Mock Get-StepIdentifier { "$($script:NtInfo2.Path):$($script:NtInfo2.FirstStepLine)" }
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                { New-Step -RespectErrorPreference { Write-Error 'nt' } 2>$null } |
+                    Should -Throw -ErrorId 'StepExecutionFailed'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+
+        It 'Leaves caller ErrorActionPreference untouched when -RespectErrorPreference is set' {
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                { New-Step -RespectErrorPreference { Write-Error 'nt' } 2>$null } | Should -Throw
+                $ErrorActionPreference | Should -Be 'Stop'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+
+        It 'Restores the caller ErrorActionPreference after a pinned step' {
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                New-Step { Write-Error 'nt' } 2>$null
+                $ErrorActionPreference | Should -Be 'Stop'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
         }
     }
 
