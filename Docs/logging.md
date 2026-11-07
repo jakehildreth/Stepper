@@ -143,6 +143,27 @@ Stop the transcript with Stop-Transcript and re-run the script.
 
 ---
 
+## Non-Terminating Errors
+
+A step that emits non-terminating errors (`Write-Error`, cmdlet failures without `-ErrorAction Stop`) still completes and is marked done. Stepper makes the errors visible instead:
+
+- **Surfaced** errors reached the error stream.
+- **Silenced or caught** errors were recorded in `$Error` but not displayed, for example with `-ErrorAction SilentlyContinue` or a `try/catch` that handled them. `-ErrorAction Ignore` errors are not recorded and not counted.
+
+After each step with errors, Stepper prints a warning with both counts:
+
+```
+WARNING: Step 1/2 - 'one' completed with non-terminating errors: 1 surfaced, 1 silenced or caught. Details: ./script.ps1.stepper.errors.log
+```
+
+Full error records go to an error log next to the main log: `.errors` is inserted before the extension (`script.ps1.stepper.log` becomes `script.ps1.stepper.errors.log`). Steps with logging disabled (`-NoLog` or logging disabled for the run) get the warning but no error log.
+
+Counts are saved in the state file. `Stop-Stepper` prints a summary across all steps, including steps from earlier resumed runs.
+
+A terminating error still fails the step and ends the script.
+
+---
+
 ## Log Config Persistence
 
 Logging configuration (`LogPath`, `LoggingEnabled`, `NoLogStepIds`) is stored in the `.stepper` state file. Resumed runs restore the same config without re-prompting.

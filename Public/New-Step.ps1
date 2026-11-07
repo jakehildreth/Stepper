@@ -15,11 +15,32 @@ function New-Step {
         removed from the caller's scope, and the previous run's log config is
         discarded, so the new run behaves as if no prior run happened.
 
+        Non-terminating errors never fail a step. When a step emits any, New-Step warns
+        with separate counts of surfaced and silenced-or-caught errors, writes full
+        details to scriptname.ps1.stepper.errors.log (skipped when logging is off for
+        the step), and saves the counts in the state file. A terminating error fails
+        the step and ends the script.
+
+        To guarantee "never fail" holds even when the caller set
+        $ErrorActionPreference = 'Stop' (CI runners do this globally), New-Step pins
+        ErrorActionPreference to Continue in the caller's session state for the
+        duration of the step and renders surfaced errors itself. Pass
+        -RespectErrorPreference to disable this: the step then runs under the
+        caller's preference, and under Stop a non-terminating error fails the step.
+
     .PARAMETER Name
         Optional name for this step. Displayed in verbose output and resume prompts.
 
     .PARAMETER ScriptBlock
         The code to execute for this step.
+
+    .PARAMETER RespectErrorPreference
+        Runs the step under the caller's $ErrorActionPreference instead of pinning
+        it to Continue. With the default (absent), non-terminating errors never
+        terminate the step even when the caller set Stop. With this switch, a
+        non-terminating error under Stop fails the step and ends the script,
+        exactly like a terminating error: state is saved, and the next run offers
+        to resume at the failed step.
 
     .PARAMETER LogPath
         Optional path to a log file. If specified on any step, Stepper uses that path for
@@ -78,6 +99,9 @@ function New-Step {
         [Parameter(ParameterSetName = 'Named', Mandatory, Position = 1)]
         [Parameter(ParameterSetName = 'Unnamed', Mandatory, Position = 0)]
         [scriptblock]$ScriptBlock,
+
+        [Parameter()]
+        [switch]$RespectErrorPreference,
 
         [Parameter()]
         [string]$LogPath,
@@ -312,7 +336,44 @@ function New-Step {
 
             try {
                 $attemptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                & $ScriptBlock
+
+                # Surfaced errors are redirected so they can be counted, then re-emitted.
+                # Records absent from $Error (native command stderr) pass through untouched.
+                # The step's own Write-Error calls honor the CALLER's $ErrorActionPreference
+                # (module functions run in the caller's preference scope). CI sets it to Stop
+                # globally, which would turn every surfaced non-terminating error into a step
+                # failure. Unless -RespectErrorPreference is given, pin Continue in the
+                # caller's session state for the step's duration; restored in finally.
+                $callerSessionState = $PSCmdlet.SessionState
+                $existingEapVar = $callerSessionState.PSVariable.Get('ErrorActionPreference')
+                $savedErrorActionPreference = if ($null -ne $existingEapVar) { $existingEapVar.Value } else { 'Continue' }
+                if (-not $RespectErrorPreference.IsPresent) {
+                    $callerSessionState.PSVariable.Set('ErrorActionPreference', 'Continue')
+                }
+                $errorBaseline  = if ($global:Error.Count -gt 0) { $global:Error[0] } else { $null }
+                $surfacedErrors = [System.Collections.Generic.List[object]]::new()
+                & $ScriptBlock 2>&1 | ForEach-Object {
+                    if ($_ -is [System.Management.Automation.ErrorRecord] -and $global:Error.Contains($_)) {
+                        $surfacedErrors.Add($_)
+                        if ($RespectErrorPreference.IsPresent) {
+                            # User opted out of the pin: honor their preference on the
+                            # re-emission too. Under Stop this terminates the step.
+                            $PSCmdlet.WriteError($_)
+                        } else {
+                            # The record is already in $Error from the step's own Write-Error.
+                            # Re-entering the error pipeline ($PSCmdlet.WriteError) would render
+                            # at the outermost caller's preference: under Stop it terminates the
+                            # whole script even though the step itself kept running. WriteErrorLine
+                            # surfaces it visibly without pipeline semantics, so it can never
+                            # escalate to termination.
+                            $Host.UI.WriteErrorLine(($_ | Out-String).TrimEnd())
+                        }
+                    } else {
+                        $_
+                    }
+                }
+                $stepErrors = @(Get-StepperErrorDelta -Baseline $errorBaseline)
+
                 $attemptStopwatch.Stop()
                 $totalStopwatch.Stop()
                 $elapsed      = [Math]::Round($attemptStopwatch.Elapsed.TotalSeconds, 2)
@@ -327,6 +388,38 @@ function New-Step {
                     Add-Content -Path $stepLogPath -Value "=== END STEP $currentStepNumber$stepDisplaySuffix TRANSCRIPT ==="
                 }
 
+                #Region Non-terminating errors: warn, log details, collect counts for state
+                $surfacedCount = $surfacedErrors.Count
+                $silencedCount = [Math]::Max(0, $stepErrors.Count - $surfacedCount)
+                $stepErrorCounts = @()
+                if ($stepErrors.Count -gt 0) {
+                    $stepLabel = "Step $currentStepNumber/$totalSteps$stepDisplaySuffix"
+                    $countsText = "$surfacedCount surfaced, $silencedCount silenced or caught"
+                    $errorLogPath = $null
+                    if ($stepLoggingEnabled -and $stepLogPath) {
+                        $errorLogPath = Get-StepperErrorLogPath -LogPath $stepLogPath
+                        $chronologicalErrors = @($stepErrors)
+                        [System.Array]::Reverse($chronologicalErrors)
+                        Write-StepperErrorLog -ErrorRecord $chronologicalErrors -LogPath $errorLogPath -StepLabel $stepLabel
+                    }
+                    $detailsText = if ($errorLogPath) { " Details: $errorLogPath" } else { '' }
+                    Write-Warning "$stepLabel completed with non-terminating errors: $countsText.$detailsText"
+                    Write-StepperLog -Message "$stepLabel completed with non-terminating errors: $countsText ($displayStepId)" -Level 'WARN' -LogPath $stepLogPath
+
+                    $stepErrorCounts = @([PSCustomObject]@{
+                        StepId     = $stepId
+                        StepNumber = $currentStepNumber
+                        StepName   = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
+                        Surfaced   = $surfacedCount
+                        Silenced   = $silencedCount
+                    })
+                }
+                $existingErrorCounts = @()
+                $priorState = Read-StepperState -StatePath $statePath -ErrorAction SilentlyContinue
+                if ($priorState -and $priorState.ErrorCounts) {
+                    $existingErrorCounts = @($priorState.ErrorCounts | Where-Object { $_.StepId -ne $stepId })
+                }
+                #EndRegion Non-terminating errors
                 # Update state file after successful execution (including $Stepper data)
                 $stepperData = $callingScope.PSVariable.Get('Stepper').Value
                 # Persist state including the script contents for better change inspection
@@ -355,6 +448,7 @@ function New-Step {
                     LogPath           = $executionState.LogPath
                     LoggingEnabled    = if ($executionState.LoggingEnabled -is [bool]) { $executionState.LoggingEnabled } else { $true }
                     NoLogStepIds      = $executionState.NoLogStepIds
+                    ErrorCounts       = @($existingErrorCounts) + @($stepErrorCounts)
                 }
                 Write-StepperState @splatState
 
@@ -410,10 +504,15 @@ function New-Step {
                         [System.Management.Automation.ErrorCategory]::OperationStopped,
                         $stepId
                     )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                    # throw, not ThrowTerminatingError: that is only statement-terminating
+                    # and the script would run on to the next step.
+                    throw $errorRecord
                 }
             }
             finally {
+                if (-not $RespectErrorPreference.IsPresent) {
+                    $callerSessionState.PSVariable.Set('ErrorActionPreference', $savedErrorActionPreference)
+                }
                 if ($tempTranscript -and (Test-Path -LiteralPath $tempTranscript)) {
                     Remove-Item -LiteralPath $tempTranscript -Force -ErrorAction SilentlyContinue
                 }

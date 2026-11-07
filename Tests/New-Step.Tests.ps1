@@ -21,6 +21,9 @@ BeforeAll {
     . "$ModulePath/Private/Find-NewStepBlocks.ps1"
     . "$ModulePath/Private/Show-MoreDetails.ps1"
     . "$ModulePath/Private/Write-StepperLog.ps1"
+    . "$ModulePath/Private/Get-StepperErrorDelta.ps1"
+    . "$ModulePath/Private/Get-StepperErrorLogPath.ps1"
+    . "$ModulePath/Private/Write-StepperErrorLog.ps1"
     . "$ModulePath/Private/Get-StepLogConfig.ps1"
     . "$ModulePath/Private/Find-CrossStepVariables.ps1"
     . "$ModulePath/Private/Test-StepperConversionComplete.ps1"
@@ -1011,6 +1014,272 @@ Describe 'New-Step' -Tag 'Integration' {
                 if ($counter.Calls -lt 2) { throw 'transient' }
             }
             Should -Invoke Write-Host -ParameterFilter { $ForegroundColor -eq 'Yellow' } -Exactly 1 -Scope It
+        }
+    }
+
+    Context 'Non-terminating errors: step completion' {
+        BeforeEach {
+            $script:NtInfo = New-TestStepperScript -BaseName "nt-$(New-Guid)" -StepCount 2
+            $script:NtLog  = Join-Path $TestDrive "nt-$(New-Guid).stepper.log"
+            $script:NtErrorLog = Join-Path $TestDrive ([System.IO.Path]::GetFileNameWithoutExtension($script:NtLog) + '.errors.log')
+            $__StepperExecutionState.LogPath = $script:NtLog
+            Mock Get-StepIdentifier { "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)" }
+            Mock Write-Warning {}
+        }
+
+        It 'Marks the step complete when it emits a non-terminating error' {
+            New-Step { Write-Error 'nt' } 2>$null
+            $state = Import-Clixml -Path $script:NtInfo.StatePath
+            $state.LastCompletedStep | Should -Be "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)"
+        }
+
+        It 'Does not throw when the step emits a non-terminating error' {
+            { New-Step { Write-Error 'nt' } 2>$null } | Should -Not -Throw
+        }
+
+        It 'Passes step output through to the pipeline' {
+            $emitted = New-Step { 'step-output'; Write-Error 'nt' } 2>$null
+            $emitted | Should -Be 'step-output'
+        }
+
+        It 'Fails the step on a non-terminating error under Stop with -RespectErrorPreference' {
+            $script:NtInfo2 = New-TestStepperScript -BaseName "nt-respect-$(New-Guid)" -StepCount 2
+            Mock Get-StepIdentifier { "$($script:NtInfo2.Path):$($script:NtInfo2.FirstStepLine)" }
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                { New-Step -RespectErrorPreference { Write-Error 'nt' } 2>$null } |
+                    Should -Throw -ErrorId 'StepExecutionFailed'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+
+        It 'Leaves caller ErrorActionPreference untouched when -RespectErrorPreference is set' {
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                { New-Step -RespectErrorPreference { Write-Error 'nt' } 2>$null } | Should -Throw
+                $ErrorActionPreference | Should -Be 'Stop'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+
+        It 'Restores the caller ErrorActionPreference after a pinned step' {
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Stop'
+                New-Step { Write-Error 'nt' } 2>$null
+                $ErrorActionPreference | Should -Be 'Stop'
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+
+        It 'Behaves identically with and without -RespectErrorPreference under Continue' {
+            # Under the default preference the switch must change nothing: step completes,
+            # warns with counts, state marks the step complete either way.
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                New-Step { Write-Error 'nt-default' } 2>$null
+                $stateDefault = Import-Clixml -Path $script:NtInfo.StatePath
+                $stateDefault.LastCompletedStep | Should -Be "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)"
+
+                $script:NtInfo3 = New-TestStepperScript -BaseName "nt-respect-cont-$(New-Guid)" -StepCount 2
+                Mock Get-StepIdentifier { "$($script:NtInfo3.Path):$($script:NtInfo3.FirstStepLine)" }
+                { New-Step -RespectErrorPreference { Write-Error 'nt-respect' } 2>$null } | Should -Not -Throw
+                $stateRespect = Import-Clixml -Path $script:NtInfo3.StatePath
+                $stateRespect.LastCompletedStep | Should -Be "$($script:NtInfo3.Path):$($script:NtInfo3.FirstStepLine)"
+                @($stateRespect.ErrorCounts) | Should -HaveCount 1
+                $stateRespect.ErrorCounts[0].Surfaced | Should -Be 1
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
+    }
+
+    Context 'Non-terminating errors: console warning' {
+        BeforeEach {
+            $script:NtInfo = New-TestStepperScript -BaseName "nt-warn-$(New-Guid)" -StepCount 2
+            Mock Get-StepIdentifier { "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)" }
+            Mock Write-Warning {}
+        }
+
+        It 'Warns with separate surfaced and silenced counts' {
+            $missing = Join-Path $TestDrive "missing-$(New-Guid)"
+            New-Step {
+                Write-Error 'one'
+                Write-Error 'two'
+                Get-Item -Path $missing -ErrorAction SilentlyContinue
+            } 2>$null
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter {
+                $Message -match '2 surfaced' -and $Message -match '1 silenced or caught'
+            }
+        }
+
+        It 'Counts -ErrorAction SilentlyContinue errors as silenced, not surfaced' {
+            $missing = Join-Path $TestDrive "missing-$(New-Guid)"
+            New-Step { Get-Item -Path $missing -ErrorAction SilentlyContinue }
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter {
+                $Message -match '0 surfaced' -and $Message -match '1 silenced or caught'
+            }
+        }
+
+        It 'Does not warn when the step emits no errors' {
+            New-Step { 'clean' }
+            Should -Invoke Write-Warning -Exactly 0 -ParameterFilter { $Message -match 'surfaced' }
+        }
+
+        It 'Does not count errors that existed before the step ran' {
+            try { throw 'pre-existing' } catch { }
+            New-Step { 'clean' }
+            Should -Invoke Write-Warning -Exactly 0 -ParameterFilter { $Message -match 'surfaced' }
+        }
+
+        It 'Does not count -ErrorAction Ignore errors' {
+            $missing = Join-Path $TestDrive "missing-$(New-Guid)"
+            New-Step { Get-Item -Path $missing -ErrorAction Ignore }
+            Should -Invoke Write-Warning -Exactly 0 -ParameterFilter { $Message -match 'surfaced' }
+        }
+
+        It 'Includes the step number and name in the warning' {
+            New-Step 'Deploy' { Write-Error 'nt' } 2>$null
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter {
+                $Message -match 'Step 1/2' -and $Message -match "'Deploy'"
+            }
+        }
+    }
+
+    Context 'Non-terminating errors: error log' {
+        BeforeEach {
+            $script:NtInfo = New-TestStepperScript -BaseName "nt-log-$(New-Guid)" -StepCount 2
+            $script:NtLog  = Join-Path $TestDrive "nt-log-$(New-Guid).stepper.log"
+            $script:NtErrorLog = $script:NtLog -replace '\.log$', '.errors.log'
+            $__StepperExecutionState.LogPath = $script:NtLog
+            Mock Get-StepIdentifier { "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)" }
+            Mock Write-Warning {}
+        }
+
+        It 'Writes full error details to the derived error log' {
+            New-Step { Write-Error 'surfaced-detail-xyz' } 2>$null
+            $script:NtErrorLog | Should -Exist
+            Get-Content -Path $script:NtErrorLog -Raw | Should -Match 'surfaced-detail-xyz'
+        }
+
+        It 'Writes silenced errors to the error log' {
+            $missing = Join-Path $TestDrive "silenced-detail-$(New-Guid)"
+            New-Step { Get-Item -Path $missing -ErrorAction SilentlyContinue }
+            Get-Content -Path $script:NtErrorLog -Raw | Should -Match 'silenced-detail-'
+        }
+
+        It 'Names the error log in the warning' {
+            New-Step { Write-Error 'nt' } 2>$null
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter { $Message -like "*$($script:NtErrorLog)*" }
+        }
+
+        It 'Does not create an error log when the step emits no errors' {
+            New-Step { 'clean' }
+            $script:NtErrorLog | Should -Not -Exist
+        }
+
+        It 'Does not write the error log for a -NoLog step but still warns with counts' {
+            $__StepperExecutionState.NoLogStepIds = @("$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)")
+            New-Step -NoLog { Write-Error 'nt' } 2>$null
+            $script:NtErrorLog | Should -Not -Exist
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter { $Message -match '1 surfaced' }
+        }
+
+        It 'Does not write the error log when logging is disabled for the run' {
+            $__StepperExecutionState.LoggingEnabled = $false
+            New-Step { Write-Error 'nt' } 2>$null
+            $script:NtErrorLog | Should -Not -Exist
+            Should -Invoke Write-Warning -Exactly 1 -ParameterFilter { $Message -match '1 surfaced' }
+        }
+
+        It 'Does not write an error log when no log path was resolved' {
+            $__StepperExecutionState.LogPath = $null
+            { New-Step { Write-Error 'nt' } 2>$null } | Should -Not -Throw
+        }
+    }
+
+    Context 'Non-terminating errors: state persistence' {
+        BeforeEach {
+            $script:NtInfo = New-TestStepperScript -BaseName "nt-state-$(New-Guid)" -StepCount 2
+            $script:NtFirstId  = "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)"
+            $script:NtSecondId = "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine + 1)"
+            Mock Write-Warning {}
+        }
+
+        It 'Persists surfaced and silenced counts for the step' {
+            Mock Get-StepIdentifier { $script:NtFirstId }
+            $missing = Join-Path $TestDrive "missing-$(New-Guid)"
+            New-Step 'First' {
+                Write-Error 'a'
+                Get-Item -Path $missing -ErrorAction SilentlyContinue
+            } 2>$null
+            $state = Import-Clixml -Path $script:NtInfo.StatePath
+            @($state.ErrorCounts) | Should -HaveCount 1
+            $state.ErrorCounts[0].StepId | Should -Be $script:NtFirstId
+            $state.ErrorCounts[0].StepNumber | Should -Be 1
+            $state.ErrorCounts[0].StepName | Should -Be 'First'
+            $state.ErrorCounts[0].Surfaced | Should -Be 1
+            $state.ErrorCounts[0].Silenced | Should -Be 1
+        }
+
+        It 'Does not persist an entry for a step with no errors' {
+            Mock Get-StepIdentifier { $script:NtFirstId }
+            New-Step { 'clean' }
+            $state = Import-Clixml -Path $script:NtInfo.StatePath
+            $state.ErrorCounts | Should -BeNullOrEmpty
+        }
+
+        It 'Keeps counts from earlier steps in the state file across runs' {
+            Mock Get-StepIdentifier { $script:NtFirstId }
+            New-Step { Write-Error 'first-run' } 2>$null
+
+            # Simulate a resumed run: the first step is already done, the second runs now
+            Mock Get-StepIdentifier { $script:NtSecondId }
+            New-Step { Write-Error 'second-a'; Write-Error 'second-b' } 2>$null
+
+            $state = Import-Clixml -Path $script:NtInfo.StatePath
+            @($state.ErrorCounts) | Should -HaveCount 2
+            ($state.ErrorCounts | Where-Object StepId -eq $script:NtFirstId).Surfaced | Should -Be 1
+            ($state.ErrorCounts | Where-Object StepId -eq $script:NtSecondId).Surfaced | Should -Be 2
+        }
+    }
+
+    Context 'Terminating errors end the script' {
+        BeforeAll {
+            $script:PwshPath = (Get-Process -Id $PID).Path
+            $script:ModuleManifest = Join-Path (Split-Path -Path $PSScriptRoot -Parent) 'Stepper.psd1'
+        }
+
+        It 'Does not run steps after a step that throws' {
+            $scriptPath = Join-Path $TestDrive "terminating-$(New-Guid).ps1"
+            $scriptLines = @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'one' { throw 'boom' }"
+                "New-Step 'two' { Write-Host 'SECOND-STEP-RAN' }"
+                ''
+                'Stop-Stepper'
+            )
+            Set-Content -Path $scriptPath -Value $scriptLines
+            $command = "Import-Module '$($script:ModuleManifest)'; & '$scriptPath'"
+
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'Step failed'
+            $output | Should -Not -Match 'SECOND-STEP-RAN'
+            (Get-StepperStatePath -ScriptPath $scriptPath) | Should -Not -Exist
         }
     }
 

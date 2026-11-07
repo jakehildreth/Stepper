@@ -36,6 +36,10 @@ function Write-StepperState {
     .PARAMETER NoLogStepIds
         Step identifiers (ScriptPath:LineNumber) for steps with -NoLog. Persisted alongside LoggingEnabled.
 
+    .PARAMETER ErrorCounts
+        Per-step non-terminating error counts. Each entry has StepId, StepNumber, StepName,
+        Surfaced, and Silenced. Persisted so Stop-Stepper can summarize across resumed runs.
+
     .OUTPUTS
         None
     #>
@@ -69,7 +73,10 @@ function Write-StepperState {
         [bool]$LoggingEnabled,
 
         [Parameter()]
-        [string[]]$NoLogStepIds
+        [string[]]$NoLogStepIds,
+
+        [Parameter()]
+        [object[]]$ErrorCounts
     )
 
     $state = [PSCustomObject]@{
@@ -83,6 +90,7 @@ function Write-StepperState {
         LogPath                 = $LogPath
         LoggingEnabled          = $LoggingEnabled
         NoLogStepIds            = $NoLogStepIds
+        ErrorCounts             = $ErrorCounts
     }
 
     try {

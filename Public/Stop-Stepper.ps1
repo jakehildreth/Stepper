@@ -6,6 +6,8 @@ function Stop-Stepper {
     .DESCRIPTION
         Removes the state file, typically called at the end of a script
         when it completes successfully. This ensures the next run starts fresh.
+        If any step emitted non-terminating errors, it first shows a summary of the
+        surfaced and silenced-or-caught error counts across all steps.
 
     .EXAMPLE
         # At the end of your script:
@@ -88,6 +90,26 @@ function Stop-Stepper {
             }
 
             $statePath = Get-StepperStatePath -ScriptPath $scriptPath
+
+            #Region Non-terminating error summary
+            $errorCounts = @()
+            $finalState = Read-StepperState -StatePath $statePath -ErrorAction SilentlyContinue
+            if ($finalState -and $finalState.ErrorCounts) {
+                $errorCounts = @($finalState.ErrorCounts | Sort-Object StepNumber)
+            }
+            if ($errorCounts.Count -gt 0) {
+                $totalSurfaced = ($errorCounts | Measure-Object -Property Surfaced -Sum).Sum
+                $totalSilenced = ($errorCounts | Measure-Object -Property Silenced -Sum).Sum
+                $summaryText = "$($errorCounts.Count) step(s) completed with non-terminating errors: $totalSurfaced surfaced, $totalSilenced silenced or caught."
+                Write-Warning "Stepper: $summaryText"
+                Write-StepperLog -Message $summaryText -Level 'WARN' -LogPath $logPath
+                foreach ($entry in $errorCounts) {
+                    $namePart = if ($entry.StepName) { " - '$($entry.StepName)'" } else { '' }
+                    Write-Host "  Step $($entry.StepNumber)${namePart}: $($entry.Surfaced) surfaced, $($entry.Silenced) silenced or caught"
+                }
+            }
+            #EndRegion Non-terminating error summary
+
             Write-StepperLog -Message "All steps complete. State file removed." -LogPath $logPath
             Remove-StepperState -StatePath $statePath
             $scriptName = Split-Path $scriptPath -Leaf

@@ -101,6 +101,24 @@ Describe 'Write-StepperState' -Tag 'Unit' {
             $state = Import-Clixml -Path $StatePath
             $state.NoLogStepIds | Should -BeNullOrEmpty
         }
+
+        It 'Should persist ErrorCounts entries when provided' {
+            $counts = @(
+                [PSCustomObject]@{ StepId = '/tmp/test.ps1:5'; StepNumber = 1; StepName = 'One'; Surfaced = 2; Silenced = 1 }
+                [PSCustomObject]@{ StepId = '/tmp/test.ps1:9'; StepNumber = 2; StepName = $null; Surfaced = 0; Silenced = 3 }
+            )
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:9' -ErrorCounts $counts
+            $state = Import-Clixml -Path $StatePath
+            @($state.ErrorCounts) | Should -HaveCount 2
+            $state.ErrorCounts[0].Surfaced | Should -Be 2
+            $state.ErrorCounts[1].Silenced | Should -Be 3
+        }
+
+        It 'Should persist ErrorCounts as null when not provided' {
+            Write-StepperState -StatePath $StatePath -ScriptHash 'abc' -LastCompletedStep '/tmp/test.ps1:10'
+            $state = Import-Clixml -Path $StatePath
+            $state.ErrorCounts | Should -BeNullOrEmpty
+        }
     }
 
     Context 'When Export-Clixml fails' {
