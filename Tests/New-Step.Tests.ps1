@@ -1076,6 +1076,28 @@ Describe 'New-Step' -Tag 'Integration' {
                 $ErrorActionPreference = $savedEAP
             }
         }
+
+        It 'Behaves identically with and without -RespectErrorPreference under Continue' {
+            # Under the default preference the switch must change nothing: step completes,
+            # warns with counts, state marks the step complete either way.
+            $savedEAP = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                New-Step { Write-Error 'nt-default' } 2>$null
+                $stateDefault = Import-Clixml -Path $script:NtInfo.StatePath
+                $stateDefault.LastCompletedStep | Should -Be "$($script:NtInfo.Path):$($script:NtInfo.FirstStepLine)"
+
+                $script:NtInfo3 = New-TestStepperScript -BaseName "nt-respect-cont-$(New-Guid)" -StepCount 2
+                Mock Get-StepIdentifier { "$($script:NtInfo3.Path):$($script:NtInfo3.FirstStepLine)" }
+                { New-Step -RespectErrorPreference { Write-Error 'nt-respect' } 2>$null } | Should -Not -Throw
+                $stateRespect = Import-Clixml -Path $script:NtInfo3.StatePath
+                $stateRespect.LastCompletedStep | Should -Be "$($script:NtInfo3.Path):$($script:NtInfo3.FirstStepLine)"
+                @($stateRespect.ErrorCounts) | Should -HaveCount 1
+                $stateRespect.ErrorCounts[0].Surfaced | Should -Be 1
+            } finally {
+                $ErrorActionPreference = $savedEAP
+            }
+        }
     }
 
     Context 'Non-terminating errors: console warning' {
