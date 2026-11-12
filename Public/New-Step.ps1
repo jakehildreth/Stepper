@@ -50,9 +50,9 @@ function New-Step {
         scriptname.ps1.stepper.log.
 
     .PARAMETER NoLog
-        Skips logging for this step. When present on one or more steps, Stepper prompts the
-        user at init time to choose whether to ignore the flag (log all steps), skip only
-        the flagged steps, or disable logging entirely.
+        Skips Stepper's transcript and detailed error log for this step when the user
+        selects that scope at initialization. Stepper can still display errors in the
+        console. Other PowerShell transcripts can still record the step's output.
 
     .PARAMETER Retry
         Enables exponential backoff retry behavior for this step. When specified, a failed
@@ -255,16 +255,18 @@ function New-Step {
         $stepDisplaySuffix = if ($PSCmdlet.ParameterSetName -eq 'Named') { " - '$Name'" } else { '' }
 
         # Resolve logging state for this step
-        $stepLogPath = $executionState.LogPath
         $stepLoggingEnabled = $executionState.LoggingEnabled -and
             ($executionState.NoLogStepIds -notcontains $stepId)
+        $stepLogPath = if ($stepLoggingEnabled) { $executionState.LogPath } else { $null }
 
         # Runtime -LogPath conflict check
-        if ($LogPath -and $stepLogPath -and $LogPath -ne $stepLogPath) {
-            Write-Warning "New-Step at ${displayStepId}: -LogPath '$LogPath' differs from the resolved log path '$stepLogPath'. Using resolved path."
+        if ($LogPath -and $executionState.LogPath -and $LogPath -ne $executionState.LogPath) {
+            Write-Warning "New-Step at ${displayStepId}: -LogPath '$LogPath' differs from the resolved log path '$($executionState.LogPath)'. Using resolved path."
         }
 
-        Write-StepperLog -Message "Executing step $currentStepNumber/$totalSteps$stepDisplaySuffix ($displayStepId)" -LogPath $stepLogPath
+        if ($stepLoggingEnabled) {
+            Write-StepperLog -Message "Executing step $currentStepNumber/$totalSteps$stepDisplaySuffix ($displayStepId)" -LogPath $stepLogPath
+        }
 
         # Show current $Stepper data
         try {
@@ -298,25 +300,38 @@ function New-Step {
             }
         }
 
-        if (-not $stepLoggingEnabled -and $stepLogPath) {
-            Add-Content -Path $stepLogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
+        if ($executionState.LoggingEnabled -and $executionState.LogPath -and
+            ($executionState.NoLogStepIds -contains $stepId)) {
+            Add-Content -Path $executionState.LogPath -Value "=== STEP $currentStepNumber$stepDisplaySuffix LOGGING DISABLED BY USER ==="
         }
 
         # Check for active transcript once before any retry attempts
         if ($stepLoggingEnabled -and $stepLogPath) {
-            if ($Host.UI.IsTranscribing) {
+            # shortcut: This internal property can change; use a public transcript-state API if one is added.
+            try {
+                $transcriptStateProperty = [System.Management.Automation.Host.PSHostUserInterface].GetProperty(
+                    'IsTranscribing', [System.Reflection.BindingFlags]'Instance,NonPublic')
+                if ($null -eq $transcriptStateProperty -or $transcriptStateProperty.PropertyType -ne [bool]) {
+                    throw 'The internal Boolean IsTranscribing property is unavailable.'
+                }
+                $isTranscribing = $transcriptStateProperty.GetValue($Host.UI)
+            } catch [System.Management.Automation.RuntimeException] {
+                throw "Stepper cannot check transcript state. Disable Stepper logging or use a compatible PowerShell version. $($_.Exception.Message)"
+            }
+
+            if ($isTranscribing) {
                 Write-Host ""
-                Write-Host "[!] Stepper detected an active transcript. Stop your transcript with Stop-Transcript and re-run the script." -ForegroundColor Magenta
+                Write-Host "[!] Stepper detected an active transcript. Stop it or disable Stepper logging, then re-run the script." -ForegroundColor Magenta
                 Write-Host ""
                 $exception = [System.InvalidOperationException]::new(
-                    'An active PowerShell transcript was detected. Stop the transcript with Stop-Transcript and re-run the script.')
+                    'An active PowerShell transcript was detected. Stop it with Stop-Transcript or disable Stepper logging, then re-run the script.')
                 $errorRecord = [System.Management.Automation.ErrorRecord]::new(
                     $exception,
                     'TranscriptAlreadyActive',
                     [System.Management.Automation.ErrorCategory]::ResourceBusy,
                     $null
                 )
-                $PSCmdlet.ThrowTerminatingError($errorRecord)
+                throw $errorRecord
             }
         }
 
@@ -404,7 +419,9 @@ function New-Step {
                     }
                     $detailsText = if ($errorLogPath) { " Details: $errorLogPath" } else { '' }
                     Write-Warning "$stepLabel completed with non-terminating errors: $countsText.$detailsText"
-                    Write-StepperLog -Message "$stepLabel completed with non-terminating errors: $countsText ($displayStepId)" -Level 'WARN' -LogPath $stepLogPath
+                    if ($stepLoggingEnabled) {
+                        Write-StepperLog -Message "$stepLabel completed with non-terminating errors: $countsText ($displayStepId)" -Level 'WARN' -LogPath $stepLogPath
+                    }
 
                     $stepErrorCounts = @([PSCustomObject]@{
                         StepId     = $stepId
@@ -457,7 +474,9 @@ function New-Step {
                 } else {
                     "Step $currentStepNumber/$totalSteps$stepDisplaySuffix completed in ${elapsed}s ($displayStepId)"
                 }
-                Write-StepperLog -Message $completionMessage -LogPath $stepLogPath
+                if ($stepLoggingEnabled) {
+                    Write-StepperLog -Message $completionMessage -LogPath $stepLogPath
+                }
 
                 if ($stepperData -and $stepperData.Count -gt 0) {
                     Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Saved `$Stepper data ($($stepperData.Count) items)"
@@ -490,12 +509,16 @@ function New-Step {
 
                 if ($Retry.IsPresent -and $retryAttempt -lt $MaxRetries) {
                     $waitSeconds = [int]($RetryInterval * [Math]::Pow(2, $retryAttempt))
-                    Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix failed (attempt $($retryAttempt + 1)/$MaxRetries) at $location`: $innerMessage. Retrying in ${waitSeconds}s..." -Level 'WARN' -LogPath $stepLogPath
+                    if ($stepLoggingEnabled) {
+                        Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix failed (attempt $($retryAttempt + 1)/$MaxRetries) at $location`: $innerMessage. Retrying in ${waitSeconds}s..." -Level 'WARN' -LogPath $stepLogPath
+                    }
                     Write-Host "[>] Retrying in ${waitSeconds}s (attempt $($retryAttempt + 2) of $($MaxRetries + 1))..." -ForegroundColor Yellow
                     Start-Sleep -Seconds $waitSeconds
                     $retryAttempt++
                 } else {
-                    Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix FAILED at $location`: $innerMessage" -Level 'ERROR' -LogPath $stepLogPath
+                    if ($stepLoggingEnabled) {
+                        Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix FAILED at $location`: $innerMessage" -Level 'ERROR' -LogPath $stepLogPath
+                    }
 
                     $exception = [System.Exception]::new("Step failed [$location]: $innerMessage", $_.Exception)
                     $errorRecord = [System.Management.Automation.ErrorRecord]::new(

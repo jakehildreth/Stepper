@@ -55,7 +55,7 @@ Create `config.json` in the Stepper config directory (`$env:XDG_CONFIG_HOME/step
 
 **Stepper fails with `TranscriptAlreadyActive`**
 
-A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an enterprise runbook). Call `Stop-Transcript` before running the script, or add `-NoLog` to your steps and choose `[s]` or `[d]` at the scope prompt. `-NoLog` alone is not enough: the default `[A]` ignores the flags and the check still throws. See [Logging](logging.md) for details.
+A PowerShell transcript is already running (e.g., started in `$PROFILE` or by an enterprise runbook). Call `Stop-Transcript` before running the script, or add `-NoLog` to your steps and choose `[s]` or `[d]` at the scope prompt. `-NoLog` alone is not enough: the default `[A]` ignores the flags and the check still throws. Other transcripts can still record step output. See [Logging](logging.md) for details.
 
 **`Read-Host` prompts and responses don't appear in the log file**
 

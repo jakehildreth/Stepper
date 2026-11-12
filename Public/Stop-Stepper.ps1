@@ -79,11 +79,15 @@ function Stop-Stepper {
         if ($scriptPath) {
             # Read log config from execution state before removing state
             $logPath = $null
+            $loggingEnabled = $true
             try {
                 $callingScope = $PSCmdlet.SessionState
                 $execState = $callingScope.PSVariable.Get('__StepperExecutionState')
-                if ($execState -and $execState.Value -and $execState.Value.LogPath) {
-                    $logPath = $execState.Value.LogPath
+                if ($execState -and $execState.Value) {
+                    $loggingEnabled = $execState.Value.LoggingEnabled -ne $false
+                    if ($loggingEnabled -and $execState.Value.LogPath) {
+                        $logPath = $execState.Value.LogPath
+                    }
                 }
             } catch {
                 # Ignore; log path optional
@@ -102,7 +106,9 @@ function Stop-Stepper {
                 $totalSilenced = ($errorCounts | Measure-Object -Property Silenced -Sum).Sum
                 $summaryText = "$($errorCounts.Count) step(s) completed with non-terminating errors: $totalSurfaced surfaced, $totalSilenced silenced or caught."
                 Write-Warning "Stepper: $summaryText"
-                Write-StepperLog -Message $summaryText -Level 'WARN' -LogPath $logPath
+                if ($loggingEnabled) {
+                    Write-StepperLog -Message $summaryText -Level 'WARN' -LogPath $logPath
+                }
                 foreach ($entry in $errorCounts) {
                     $namePart = if ($entry.StepName) { " - '$($entry.StepName)'" } else { '' }
                     Write-Host "  Step $($entry.StepNumber)${namePart}: $($entry.Surfaced) surfaced, $($entry.Silenced) silenced or caught"
@@ -110,7 +116,9 @@ function Stop-Stepper {
             }
             #EndRegion Non-terminating error summary
 
-            Write-StepperLog -Message "All steps complete. State file removed." -LogPath $logPath
+            if ($loggingEnabled) {
+                Write-StepperLog -Message "All steps complete. State file removed." -LogPath $logPath
+            }
             Remove-StepperState -StatePath $statePath
             $scriptName = Split-Path $scriptPath -Leaf
             Write-Verbose "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')][Stepper] Cleared Stepper state for $scriptName"

@@ -369,5 +369,14 @@ Describe 'Stop-Stepper' -Tag 'Integration' {
                 $LogPath -eq $expectedLog
             }
         }
+
+        It 'Should not write to the log when logging is disabled for the run' {
+            $executionState = Get-Variable -Name '__StepperExecutionState' -ValueOnly
+            $executionState.LoggingEnabled = $false
+
+            Stop-Stepper
+
+            Should -Invoke Write-StepperLog -Exactly 0 -Scope It
+        }
     }
 }
