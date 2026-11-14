@@ -348,21 +348,43 @@ Describe 'New-Step' -Tag 'Integration' {
         BeforeEach {
             $script:TranscriptInfo = New-TestStepperScript -BaseName 'log-transcript'
             Mock Get-StepIdentifier { "$($script:TranscriptInfo.Path):$($script:TranscriptInfo.FirstStepLine)" }
-            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
             Mock Write-StepperLog {}
-            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
-            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+            $__StepperExecutionState.LogPath = Join-Path $TestDrive 'stepper-transcript.log'
         }
 
-        It 'Should throw TranscriptAlreadyActive when host transcript is active' -Skip:($true) {
-            # $Host.UI.IsTranscribing cannot be mocked via Pester Mock on a live host object.
-            # Covered by manual verification: run a script with an active transcript and
-            # confirm Stepper halts with ErrorId 'TranscriptAlreadyActive'.
+        It 'Rejects a logged step when the caller has an active transcript' {
+            $callerTranscript = Join-Path $TestDrive 'caller-transcript.log'
+            $sideEffect = Join-Path $TestDrive 'blocked-step.txt'
+            $caughtError = $null
+
+            Start-Transcript -Path $callerTranscript -Force -ErrorAction Stop | Out-Null
+            try {
+                try {
+                    New-Step { Set-Content -Path $sideEffect -Value 'executed' }
+                } catch {
+                    $caughtError = $_
+                }
+            } finally {
+                $stoppedTranscript = Stop-Transcript -ErrorAction Stop
+            }
+
+            $caughtError | Should -Not -BeNullOrEmpty
+            $caughtError.FullyQualifiedErrorId | Should -Match '^TranscriptAlreadyActive(,|$)'
+            $sideEffect | Should -Not -Exist
+            $script:TranscriptInfo.StatePath | Should -Not -Exist
+            $stoppedTranscript | Should -Match ([regex]::Escape($callerTranscript))
         }
 
-        It 'Should throw with ErrorId TranscriptAlreadyActive when transcript is active' -Skip:($true) {
-            # Skipped: $Host.UI.IsTranscribing cannot be mocked via Pester Mock
-            # Covered by manual verification and ADR documentation
+        It 'Runs a logged step after the caller stops its transcript' {
+            $callerTranscript = Join-Path $TestDrive 'caller-stopped-transcript.log'
+            $sideEffect = Join-Path $TestDrive 'allowed-step.txt'
+
+            Start-Transcript -Path $callerTranscript -Force -ErrorAction Stop | Out-Null
+            Stop-Transcript -ErrorAction Stop | Out-Null
+
+            { New-Step { Set-Content -Path $sideEffect -Value 'executed' } } | Should -Not -Throw
+            $sideEffect | Should -Exist
+            Get-Content -Path $__StepperExecutionState.LogPath -Raw | Should -Match 'BEGIN STEP'
         }
     }
 
@@ -397,8 +419,46 @@ Describe 'New-Step' -Tag 'Integration' {
         BeforeEach {
             $script:FailLogInfo = New-TestStepperScript -BaseName 'log-fail'
             $script:FailLogPath = Join-Path $TestDrive 'fail-test.log'
+            Remove-Item -LiteralPath $script:FailLogPath -Force -ErrorAction SilentlyContinue
             Mock Get-StepIdentifier { "$($script:FailLogInfo.Path):$($script:FailLogInfo.FirstStepLine)" }
             $__StepperExecutionState.LogPath = $script:FailLogPath
+        }
+
+        It 'Does not write a -NoLog step failure to the structured log' {
+            $secret = 'NOLOG-SYNTHETIC-VALUE'
+            $__StepperExecutionState.NoLogStepIds = @("$($script:FailLogInfo.Path):$($script:FailLogInfo.FirstStepLine)")
+            $caughtError = $null
+            Mock Write-StepperLog {}
+
+            try {
+                New-Step 'quiet' -NoLog { throw $secret }
+            } catch {
+                $caughtError = $_
+            }
+
+            $caughtError.Exception.Message | Should -Match $secret
+            $logContent = Get-Content -Path $script:FailLogPath -Raw
+            $logContent | Should -Match 'LOGGING DISABLED BY USER'
+            $logContent | Should -Not -Match ([regex]::Escape($secret))
+            $logContent | Should -Not -Match 'Executing step|\[ERROR\]'
+            Should -Invoke Write-StepperLog -Exactly 0 -Scope It
+        }
+
+        It 'Does not write a step failure when logging is disabled for the run' {
+            $secret = 'DISABLED-LOG-SYNTHETIC-VALUE'
+            $__StepperExecutionState.LoggingEnabled = $false
+            $caughtError = $null
+            Mock Write-StepperLog {}
+
+            try {
+                New-Step { throw $secret }
+            } catch {
+                $caughtError = $_
+            }
+
+            $caughtError.Exception.Message | Should -Match $secret
+            $script:FailLogPath | Should -Not -Exist
+            Should -Invoke Write-StepperLog -Exactly 0 -Scope It
         }
 
         It 'Should write an [ERROR] entry to the log when a step throws' {
@@ -1280,6 +1340,97 @@ Describe 'New-Step' -Tag 'Integration' {
             $output | Should -Match 'Step failed'
             $output | Should -Not -Match 'SECOND-STEP-RAN'
             (Get-StepperStatePath -ScriptPath $scriptPath) | Should -Not -Exist
+        }
+
+        It 'Does not run a later NoLog step after detecting an active transcript' {
+            $scriptPath = Join-Path $TestDrive "active-transcript-$(New-Guid).ps1"
+            $callerTranscript = Join-Path $TestDrive "caller-$(New-Guid).log"
+            $blockedStep = Join-Path $TestDrive "blocked-$(New-Guid).txt"
+            $laterStep = Join-Path $TestDrive "later-$(New-Guid).txt"
+            $scriptLines = @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'blocked' { Set-Content -Path '$blockedStep' -Value 'ran' }"
+                "New-Step 'later' -NoLog { Set-Content -Path '$laterStep' -Value 'ran' }"
+                ''
+                'Stop-Stepper'
+            )
+            Set-Content -Path $scriptPath -Value $scriptLines
+            $command = "Import-Module '$($script:ModuleManifest)'; & (Get-Module Stepper) { `$script:__StepperTestResponses = [System.Collections.Generic.Queue[string]]::new(); `$script:__StepperTestResponses.Enqueue('s') }; Start-Transcript -Path '$callerTranscript' -ErrorAction Stop | Out-Null; & '$scriptPath'"
+
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+
+            $output | Should -Match 'An active PowerShell transcript was detected'
+            $blockedStep | Should -Not -Exist
+            $laterStep | Should -Not -Exist
+            $exitCode | Should -Not -Be 0
+            (Get-StepperStatePath -ScriptPath $scriptPath) | Should -Not -Exist
+        }
+
+        It 'Stops before running a step if transcript detection fails' {
+            $scriptPath = Join-Path $TestDrive "transcript-check-failed-$(New-Guid).ps1"
+            $blockedStep = Join-Path $TestDrive "blocked-$(New-Guid).txt"
+            $scriptLines = @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'blocked' { Set-Content -Path '$blockedStep' -Value 'ran' }"
+                ''
+                'Stop-Stepper'
+            )
+            Set-Content -Path $scriptPath -Value $scriptLines
+            $command = "Import-Module '$($script:ModuleManifest)'; `$Host | Add-Member -MemberType NoteProperty -Name UI -Value 'invalid-host-ui' -Force; & '$scriptPath'"
+
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+
+            $blockedStep | Should -Not -Exist
+            $output | Should -Match 'Stepper cannot check transcript state'
+            $exitCode | Should -Not -Be 0
+        }
+
+        It 'Keeps the caller transcript active for a NoLog step' {
+            $scriptPath = Join-Path $TestDrive "nolog-transcript-$(New-Guid).ps1"
+            $callerTranscript = Join-Path $TestDrive "caller-$(New-Guid).log"
+            $scriptLines = @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'quiet' -NoLog { Write-Host 'NOLOG-STEP-OUTPUT' }"
+                ''
+                'Stop-Stepper'
+            )
+            Set-Content -Path $scriptPath -Value $scriptLines
+            $command = "Import-Module '$($script:ModuleManifest)'; & (Get-Module Stepper) { `$script:__StepperTestResponses = [System.Collections.Generic.Queue[string]]::new(); `$script:__StepperTestResponses.Enqueue('s') }; Start-Transcript -Path '$callerTranscript' -ErrorAction Stop | Out-Null; & '$scriptPath'; Write-Host 'CALLER-TRANSCRIPT-STILL-ACTIVE'; Stop-Transcript -ErrorAction Stop | Out-Null"
+
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+
+            $exitCode | Should -Be 0
+            $output | Should -Match 'NOLOG-STEP-OUTPUT'
+            $callerContent = Get-Content -Path $callerTranscript -Raw
+            $callerContent | Should -Match 'NOLOG-STEP-OUTPUT'
+            $callerContent | Should -Match 'CALLER-TRANSCRIPT-STILL-ACTIVE'
+            $stepperContent = Get-Content -Path "$scriptPath.stepper.log" -Raw
+            $stepperContent | Should -Match 'LOGGING DISABLED BY USER'
+            $stepperContent | Should -Not -Match 'NOLOG-STEP-OUTPUT'
         }
     }
 

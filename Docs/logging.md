@@ -48,11 +48,13 @@ One or more steps have -NoLog. How should logging be scoped?
 | Choice | Behavior |
 |---|---|
 | `[A]` | Log all steps, ignore `-NoLog` flags (default) |
-| `[s]` | Skip transcript/log for flagged steps only |
-| `[d]` | Disable logging entirely for this run |
+| `[s]` | Skip all per-step log entries for flagged steps; write a disabled marker |
+| `[d]` | Disable structured logging for all steps |
 | `[q]` | Exit without running |
 
 In non-interactive mode (CI/CD, remoting), the default is `[A]`.
+
+With `[s]` or `[d]`, Stepper still displays errors and warnings in the console. It does not write exception messages or per-step log entries for disabled steps. `[s]` writes a marker for each excluded step; `[d]` writes no structured log entries, including the final completion message. An external PowerShell transcript can still record step output.
 
 ---
 
@@ -79,8 +81,8 @@ Levels: `INFO`, `WARN`, `ERROR`.
 Additional entries you may see in the log:
 
 - **Skipped steps**: on a resumed run, each previously completed step logs `Skipping step N/M ('Name') because it already completed in a previous run. (file:line)`.
-- **Logging disabled marker**: a step excluded via `-NoLog` (with scope `[s]`) writes a `=== STEP N - 'Name' LOGGING DISABLED BY USER ===` line in place of its transcript.
-- **Retry entries**: a failed attempt on a `-Retry` step logs a `WARN` entry (`Step N/M failed (attempt X/Y) at file:line: <message>. Retrying in Zs...`) plus an `[ATTEMPT N PARTIAL]` transcript section per attempt. A step that exhausts its retries logs an `ERROR` entry (`Step N/M FAILED at file:line: <message>`).
+- **Logging disabled marker**: a step excluded via `-NoLog` (with scope `[s]`) writes a `=== STEP N - 'Name' LOGGING DISABLED BY USER ===` line in place of its per-step log entries.
+- **Retry entries**: a failed attempt on a logged `-Retry` step writes a `WARN` entry (`Step N/M failed (attempt X/Y) at file:line: <message>. Retrying in Zs...`) plus an `[ATTEMPT N PARTIAL]` transcript section per attempt. A logged step that exhausts its retries writes an `ERROR` entry (`Step N/M FAILED at file:line: <message>`). Disabled steps show errors in the console but omit these log entries.
 
 ---
 
@@ -128,18 +130,22 @@ On Windows with PS 5.1 or PS 7, `Read-Host` prompts and responses are included i
 
 ## Active Transcript Conflict
 
-Stepper checks `$Host.UI.IsTranscribing` before starting a per-step transcript. If a transcript is already active (e.g., started by an enterprise runbook or `$PROFILE`), Stepper prints a magenta host banner and throws a terminating error with ErrorId `TranscriptAlreadyActive`:
+Stepper checks for an active transcript before starting a per-step transcript. If one is already active (e.g., started by an enterprise runbook or `$PROFILE`), Stepper prints a magenta host banner and stops the script with ErrorId `TranscriptAlreadyActive`:
 
 ```
-[!] Stepper detected an active transcript. Stop your transcript with Stop-Transcript and re-run the script.
+[!] Stepper detected an active transcript. Stop it or disable Stepper logging, then re-run the script.
 
 TranscriptAlreadyActive: An active PowerShell transcript was detected.
-Stop the transcript with Stop-Transcript and re-run the script.
+Stop it with Stop-Transcript or disable Stepper logging, then re-run the script.
 ```
+
+The check uses an internal PowerShell property. If that property is unavailable or cannot be read, Stepper stops with an error rather than assume that no transcript is active. Stepper does not stop the caller's transcript.
 
 **Workarounds:**
 - Call `Stop-Transcript` before running the script
 - Add `-NoLog` to the steps you want excluded, then choose `[s]` (skip flagged) or `[d]` (disable entirely) at the scope prompt. `-NoLog` alone is not enough: with the default `[A]` (log all), the flags are ignored, `NoLogStepIds` stays empty, and the transcript check still throws.
+
+Policy-enforced transcripts may not stop with `Stop-Transcript`. Disabling Stepper logging does not stop those transcripts from recording step output.
 
 ---
 
