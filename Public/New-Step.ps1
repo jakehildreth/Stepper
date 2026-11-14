@@ -330,7 +330,7 @@ function New-Step {
 
             if ($stepLoggingEnabled -and $stepLogPath) {
                 $tempTranscript = [System.IO.Path]::GetTempFileName()
-                Start-Transcript -Path $tempTranscript -Force -UseMinimalHeader -IncludeInvocationHeader | Out-Null
+                Start-Transcript -Path $tempTranscript -Force -IncludeInvocationHeader | Out-Null
                 $transcriptStarted = $true
             }
 

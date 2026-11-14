@@ -391,6 +391,14 @@ Describe 'New-Step' -Tag 'Integration' {
             $logContent = Get-Content -Path $script:TranscriptLogPath -Raw -ErrorAction SilentlyContinue
             $logContent | Should -Match 'completed in \d+\.?\d*s'
         }
+
+        It 'Should not pass -UseMinimalHeader, which Windows PowerShell 5.1 lacks' {
+            Mock Start-Transcript {}
+            Mock Stop-Transcript {}
+            New-Step { Write-Output 'step output' }
+            Should -Invoke Start-Transcript -Exactly -Times 1
+            Should -Invoke Start-Transcript -Exactly -Times 0 -ParameterFilter { $UseMinimalHeader }
+        }
     }
 
     Context 'Logging: failure writes ERROR entry to log' {
