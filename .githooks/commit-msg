@@ -1,0 +1,21 @@
+#!/bin/sh
+# Block known agent-harness auto-checkpoint commit messages unconditionally.
+# A checkpoint snapshot message is never a deliberate human act; these have
+# silently reverted shipped fixes in this repo's history. No escape hatch:
+# if a human genuinely wants this tree committed, they write a real message.
+
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+msg=$(head -1 "$msg_file")
+
+case "$msg" in
+    "Agent host session "*"- baseline checkpoint"*|"Agent host session "*"- turn "*)
+        echo "Blocked: harness auto-checkpoint commit message:" >&2
+        echo "  $msg" >&2
+        echo "Review the tree, write a real conventional-commit message, and" >&2
+        echo "commit with GIT_HUMAN_COMMIT=1 git commit ..." >&2
+        exit 1
+        ;;
+esac
+
+exit 0
