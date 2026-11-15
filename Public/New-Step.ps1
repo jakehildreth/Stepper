@@ -146,7 +146,9 @@ function New-Step {
             [System.Management.Automation.ErrorCategory]::InvalidOperation,
             $null
         )
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
+        # throw, not ThrowTerminatingError: that is only statement-terminating
+        # and the script would run on to the next statement.
+        throw $errorRecord
     }
     # Extract script path from identifier (format: "path:line")
     $lastColonIndex = $stepId.LastIndexOf(':')
@@ -163,7 +165,9 @@ function New-Step {
                 [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
                 $scriptPath
             )
-            $PSCmdlet.ThrowTerminatingError($errorRecord)
+            # throw, not ThrowTerminatingError: that is only statement-terminating
+            # and the script would run on to the next statement.
+            throw $errorRecord
         }
     }
     catch {
@@ -174,7 +178,9 @@ function New-Step {
             [System.Management.Automation.ErrorCategory]::ResourceUnavailable,
             $scriptPath
         )
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
+        # throw, not ThrowTerminatingError: that is only statement-terminating
+        # and the script would run on to the next statement.
+        throw $errorRecord
     }
     #EndRegion Check if this is an unsaved file
     
@@ -195,7 +201,9 @@ function New-Step {
             [System.Management.Automation.ErrorCategory]::InvalidOperation,
             $scriptPath
         )
-        $PSCmdlet.ThrowTerminatingError($errorRecord)
+        # throw, not ThrowTerminatingError: that is only statement-terminating
+        # and the script would run on to the next statement.
+        throw $errorRecord
     }
 
     # Determine if we should execute this step
@@ -451,7 +459,9 @@ function New-Step {
                         [System.Management.Automation.ErrorCategory]::ReadError,
                         $scriptPath
                     )
-                    $PSCmdlet.ThrowTerminatingError($errorRecord)
+                    # throw, not ThrowTerminatingError: that is only statement-terminating
+                    # and the script would run on to the next statement.
+                    throw $errorRecord
                 }
                 $completedStepName = if ($PSCmdlet.ParameterSetName -eq 'Named') { $Name } else { $null }
                 $splatState = @{
