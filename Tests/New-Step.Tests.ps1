@@ -1350,6 +1350,70 @@ Describe 'New-Step' -Tag 'Integration' {
             (Get-StepperStatePath -ScriptPath $scriptPath) | Should -Not -Exist
         }
 
+        # ThrowTerminatingError is statement-terminating only, so each lifecycle
+        # error must end the script via throw. The AFTER marker must never print.
+        It 'Ends the script on StartStepperNotRun' {
+            $scriptPath = Join-Path $TestDrive "no-start-$(New-Guid).ps1"
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                "New-Step 'one' { 'STEP-RAN' }"
+                "Write-Output 'AFTER-MARKER'"
+            )
+            $command = "Import-Module '$($script:ModuleManifest)'; & '$scriptPath'"
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'Start-Stepper has not run'
+            $output | Should -Not -Match 'AFTER-MARKER'
+        }
+
+        It 'Ends the script on StepIdentifierNotFound' {
+            $command = "Import-Module '$($script:ModuleManifest)'; New-Step { 'STEP-RAN' }; Write-Output 'AFTER-MARKER'"
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'cannot determine the step identifier'
+            $output | Should -Not -Match 'AFTER-MARKER'
+        }
+
+        It 'Ends the script on UnsavedScriptFile' {
+            $scriptPath = Join-Path $TestDrive "unsaved-$(New-Guid).ps1"
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                'Remove-Item -LiteralPath $PSCommandPath -Force'
+                "New-Step 'one' { 'STEP-RAN' }"
+                "Write-Output 'AFTER-MARKER'"
+            )
+            $command = "Import-Module '$($script:ModuleManifest)'; & '$scriptPath'"
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'unsaved files'
+            $output | Should -Not -Match 'AFTER-MARKER'
+        }
+
+        It 'Ends the script on ScriptReadFailed' {
+            $scriptPath = Join-Path $TestDrive "read-failed-$(New-Guid).ps1"
+            Set-Content -Path $scriptPath -Value @(
+                '[CmdletBinding()]'
+                'param()'
+                ''
+                '#region Stepper ignore'
+                'if (-not (Get-Module -Name Stepper) -and -not (Get-Module -ListAvailable -Name Stepper)) { Install-Module Stepper -Force }'
+                'Start-Stepper'
+                '#endregion Stepper ignore'
+                ''
+                "New-Step 'one' { Remove-Item -LiteralPath `$PSCommandPath -Force }"
+                "New-Step 'two' { Write-Output 'AFTER-MARKER' }"
+                ''
+                'Stop-Stepper'
+            )
+            $command = "Import-Module '$($script:ModuleManifest)'; & '$scriptPath'"
+            $output = & $script:PwshPath -NoProfile -NonInteractive -Command $command 2>&1 | Out-String
+
+            $output | Should -Match 'Failed to read script file'
+            $output | Should -Not -Match 'AFTER-MARKER'
+        }
+
         It 'Does not run a later NoLog step after detecting an active transcript' {
             $scriptPath = Join-Path $TestDrive "active-transcript-$(New-Guid).ps1"
             $callerTranscript = Join-Path $TestDrive "caller-$(New-Guid).log"
