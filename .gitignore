@@ -23,8 +23,3 @@ Lib/Core/*
 *.stepper
 *.stepper.log
 *.ps1.bak
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
