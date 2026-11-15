@@ -1,0 +1,42 @@
+#!/bin/sh
+# Block unattended agent-harness commits (process-tree check).
+#
+# If any ancestor of this git process is a known agent harness (GitHub
+# Copilot, omp, Crush, Herdr), the commit is refused unless the human
+# approved it with a one-shot environment variable:
+#
+#   GIT_HUMAN_COMMIT=1 git commit -m "..."
+#
+# or, for a pairing session:  export GIT_HUMAN_COMMIT=1
+#
+# Agents: present the commit message to Jake; on approval, run the commit
+# with GIT_HUMAN_COMMIT=1 set.
+#
+# Companion hook: commit-msg blocks known auto-checkpoint message formats
+# unconditionally (a checkpoint message is never a deliberate human act).
+
+[ "$GIT_HUMAN_COMMIT" = "1" ] && exit 0
+
+pid=$$
+depth=0
+while [ "$depth" -lt 40 ]; do
+    ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ -z "$ppid" ] || [ "$ppid" = "0" ] || [ "$ppid" = "1" ]; then
+        break
+    fi
+    comm=$(ps -o comm= -p "$ppid" 2>/dev/null)
+    case "$comm" in
+        *copilot*|*Copilot*|*omp*|*crush*|*Crush*|*herdr-core*|*herdr-app*)
+            echo "Blocked: git commit invoked from an agent harness ($comm)." >&2
+            echo "Commits require human approval. Either:" >&2
+            echo "  - have Jake run the commit himself, or" >&2
+            echo "  - present the message and, on approval, run it as:" >&2
+            echo "      GIT_HUMAN_COMMIT=1 git commit ..." >&2
+            exit 1
+            ;;
+    esac
+    pid=$ppid
+    depth=$((depth + 1))
+done
+
+exit 0
