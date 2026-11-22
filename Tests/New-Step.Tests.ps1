@@ -924,6 +924,33 @@ Describe 'New-Step' -Tag 'Integration' {
         }
     }
 
+    Context 'Retry: failure details shown in host output' {
+        BeforeEach {
+            $script:RetryHostInfo = New-TestStepperScript -BaseName "retry-host-$(New-Guid)"
+            Mock Get-StepIdentifier { "$($script:RetryHostInfo.Path):$($script:RetryHostInfo.FirstStepLine)" }
+            Mock Write-StepperLog {}
+            Mock Get-StepLogConfig { [PSCustomObject]@{ UniqueStaticLogPaths = @(); HasConflict = $false; NoLogStepIds = @() } }
+            Mock Start-Sleep {}
+            Mock Write-Host {}
+            Remove-Variable -Name '__StepperInitialized' -Scope Global -ErrorAction SilentlyContinue
+            Remove-Variable -Name '__StepperExecutionState' -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It 'Writes the failure message to the host before the retry countdown' {
+            $counter = @{ Calls = 0 }
+            New-Step -Retry -RetryInterval 5 -MaxRetries 3 {
+                $counter.Calls++
+                if ($counter.Calls -lt 2) { throw 'transient boom' }
+            }
+            Should -Invoke Write-Host -Scope It -ParameterFilter { $Object -match '\.ps1:\d+.*transient boom' }
+        }
+
+        It 'Does not write a failure message to the host when the step succeeds on first attempt' {
+            New-Step -Retry -RetryInterval 5 { }
+            Should -Invoke Write-Host -Scope It -Times 0 -ParameterFilter { $Object -match '\[!\]' }
+        }
+    }
+
     Context 'Retry: elapsed time reporting' {
         BeforeEach {
             $script:RetryElapsedInfo = New-TestStepperScript -BaseName "retry-elapsed-$(New-Guid)"
