@@ -522,6 +522,7 @@ function New-Step {
                     if ($stepLoggingEnabled) {
                         Write-StepperLog -Message "Step $currentStepNumber/$totalSteps$stepDisplaySuffix failed (attempt $($retryAttempt + 1)/$MaxRetries) at $location`: $innerMessage. Retrying in ${waitSeconds}s..." -Level 'WARN' -LogPath $stepLogPath
                     }
+                    Write-Host "[!] Step failed at ${location}: $innerMessage" -ForegroundColor Red
                     Write-Host "[>] Retrying in ${waitSeconds}s (attempt $($retryAttempt + 2) of $($MaxRetries + 1))..." -ForegroundColor Yellow
                     Start-Sleep -Seconds $waitSeconds
                     $retryAttempt++
